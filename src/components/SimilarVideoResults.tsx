@@ -17,8 +17,8 @@ import VideoPlayer from "./VideoPlayer";
 const ITEMS_PER_PAGE = 9;
 
 const SimilarVideoResults: React.FC<
-  SimilarVideoResultsProps & { sourceType?: "brand" | "creator" }
-> = ({ results, indexId, sourceType }) => {
+  SimilarVideoResultsProps & { sourceType?: "brand" | "creator"; textSearchTerm?: string }
+> = ({ results, indexId, sourceType, textSearchTerm }) => {
   const [videoDetails, setVideoDetails] = useState<Record<string, VideoData>>(
     {}
   );
@@ -28,7 +28,10 @@ const SimilarVideoResults: React.FC<
   );
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [loadingMore, setLoadingMore] = useState<boolean>(false);
+  const [expandedSegments, setExpandedSegments] = useState<Record<string, boolean>>({});
   const isFetchingRef = useRef<boolean>(false);
+  const playerControlsRef = useRef<Record<string, { seekTo: (time: number) => void; play: () => void; pause: () => void }>>({});
+  const activeSegmentRef = useRef<Record<string, { startTime: number; endTime: number }>>({});
 
   const { ref: loadMoreRef, inView } = useInView({
     threshold: 0.1,
@@ -151,16 +154,10 @@ const SimilarVideoResults: React.FC<
     return null;
   }
 
-  // Define similarity label and color
-  const getSimilarityLabel = (score: number, source?: string) => {
-    // BOTH source results are always High
-    if (source === "BOTH") {
-      return { label: "High", color: "green" };
-    }
-
-    // Single source cases based on score
-    if (score >= 1) return { label: "High", color: "green" };
-    if (score >= 0.5) return { label: "Medium", color: "yellow" };
+  // Define similarity label and color based on score
+  const getSimilarityLabel = (score: number, _source?: string) => {
+    if (score >= 0.9) return { label: "High", color: "green" };
+    if (score >= 0.7) return { label: "Medium", color: "yellow" };
     return { label: "Low", color: "red" };
   };
 
@@ -382,6 +379,12 @@ const SimilarVideoResults: React.FC<
     }
   };
 
+  const formatSegmentTime = (seconds: number): string => {
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
   const handleCloseModal = () => {
     setSelectedVideo(null);
   };
@@ -404,8 +407,26 @@ const SimilarVideoResults: React.FC<
           // Get the full video details from our fetched data
           const videoData = videoDetails[videoId];
 
+          const firstSegment = result.segmentMatches?.[0];
+
           return (
-            <div key={index} className="flex flex-col">
+            <div
+              key={index}
+              className="flex flex-col"
+              onMouseEnter={() => {
+                if (videoId && playerControlsRef.current[videoId] && firstSegment) {
+                  activeSegmentRef.current[videoId] = { startTime: firstSegment.targetStartTime, endTime: firstSegment.targetEndTime };
+                  playerControlsRef.current[videoId].seekTo(firstSegment.targetStartTime);
+                  playerControlsRef.current[videoId].play();
+                }
+              }}
+              onMouseLeave={() => {
+                if (videoId && playerControlsRef.current[videoId]) {
+                  playerControlsRef.current[videoId].pause();
+                  delete activeSegmentRef.current[videoId];
+                }
+              }}
+            >
               <VideoPlayer
                 videoId={videoId}
                 indexId={indexId}
@@ -415,7 +436,83 @@ const SimilarVideoResults: React.FC<
                 initialMuted
                 showCreatorTag={sourceType === "brand"}
                 showBrandTag={sourceType === "creator"}
+                onPlayerReady={(controls) => {
+                  if (videoId) {
+                    playerControlsRef.current[videoId] = controls;
+                  }
+                }}
+                onTimeUpdate={(currentTime) => {
+                  if (videoId && activeSegmentRef.current[videoId]) {
+                    const { startTime, endTime } = activeSegmentRef.current[videoId];
+                    if (currentTime >= endTime) {
+                      playerControlsRef.current[videoId]?.seekTo(startTime);
+                    }
+                  }
+                }}
               />
+
+              {/* Matched segments */}
+              {result.segmentMatches && result.segmentMatches.length > 0 && (
+                <div className="mt-3 px-1">
+                  <p className="text-xs text-gray-500 font-medium mb-1.5">Matched Segments</p>
+                  <div className="flex flex-col gap-1">
+                    {(videoId && expandedSegments[videoId]
+                      ? result.segmentMatches
+                      : result.segmentMatches.slice(0, 3)
+                    ).map((seg, segIdx) => (
+                      <div
+                        key={segIdx}
+                        className="flex items-center gap-2 text-xs text-gray-600 bg-gray-50 rounded-lg px-2.5 py-1.5 cursor-pointer hover:bg-gray-100 transition-colors"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (videoId && playerControlsRef.current[videoId]) {
+                            activeSegmentRef.current[videoId] = { startTime: seg.targetStartTime, endTime: seg.targetEndTime };
+                            playerControlsRef.current[videoId].seekTo(seg.targetStartTime);
+                            playerControlsRef.current[videoId].play();
+                          }
+                        }}
+                      >
+                        {seg.sourceStartTime !== undefined && seg.sourceEndTime !== undefined ? (
+                          <>
+                            <span className="text-[10px] text-blue-500 font-medium mr-0.5">VID</span>
+                            <span className="font-mono text-gray-700">
+                              {formatSegmentTime(seg.sourceStartTime)}-{formatSegmentTime(seg.sourceEndTime)}
+                            </span>
+                            <span className="text-gray-400">&harr;</span>
+                          </>
+                        ) : (
+                          <>
+                            <span className="text-[10px] text-purple-500 font-medium mr-0.5">TXT</span>
+                            <span className="text-gray-400 italic text-[11px] truncate max-w-[120px]" title={textSearchTerm}>
+                              {textSearchTerm ? `"${textSearchTerm.slice(0, 20)}${textSearchTerm.length > 20 ? '…' : ''}"` : 'text'}
+                            </span>
+                            <span className="text-gray-400 flex-shrink-0">&harr;</span>
+                          </>
+                        )}
+                        <span className="font-mono text-gray-700">
+                          {formatSegmentTime(seg.targetStartTime)}-{formatSegmentTime(seg.targetEndTime)}
+                        </span>
+                        <span className="ml-auto text-gray-400 font-mono">
+                          {(seg.score * 100).toFixed(0)}%
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  {result.segmentMatches.length > 3 && videoId && (
+                    <button
+                      className="mt-1.5 text-xs text-gray-400 hover:text-gray-600 transition-colors w-full text-center py-1"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setExpandedSegments(prev => ({ ...prev, [videoId]: !prev[videoId] }));
+                      }}
+                    >
+                      {expandedSegments[videoId]
+                        ? `접기`
+                        : `+ ${result.segmentMatches.length - 3}개 더 보기`}
+                    </button>
+                  )}
+                </div>
+              )}
 
               {/* Show loading indicator if details are still loading */}
               {loadingDetails && !videoData ? (
