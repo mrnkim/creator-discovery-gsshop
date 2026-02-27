@@ -79,6 +79,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
   // Notify parent with player controls once video is ready (useEffect guarantees ref is set)
   useEffect(() => {
+    console.log(`[VideoPlayer ${videoId}] onPlayerReady effect — isVideoReady=${isVideoReady}, playerRef=${!!playerRef.current}, hasCallback=${!!onPlayerReadyRef.current}`);
     if (!isVideoReady || !playerRef.current) return;
     onPlayerReadyRef.current?.({
       seekTo: (time: number) => {
@@ -87,7 +88,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
       play: () => setPlaying(true),
       pause: () => setPlaying(false),
     });
-  }, [isVideoReady]);
+  }, [isVideoReady, videoId]);
 
   const {
     data: videoDetails,
@@ -158,11 +159,14 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const prevStartTimeRef = useRef<number | undefined>(undefined);
 
   useEffect(() => {
+    console.log(`[VideoPlayer ${videoId}] startTime effect — isVideoReady=${isVideoReady}, startTime=${startTime}, endTime=${endTime}, playerRef=${!!playerRef.current}`);
+
     if (!isVideoReady) return;
 
     // Segment cleared → pause if we were playing a segment
     if (startTime == null) {
       if (prevStartTimeRef.current != null) {
+        console.log(`[VideoPlayer ${videoId}] Segment cleared → pausing`);
         setPlaying(false);
         prevStartTimeRef.current = undefined;
       }
@@ -170,29 +174,37 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     }
 
     const video = playerRef.current;
-    if (!video) return;
+    if (!video) {
+      console.warn(`[VideoPlayer ${videoId}] playerRef.current is NULL despite isVideoReady=true`);
+      return;
+    }
 
     const segmentChanged = prevStartTimeRef.current !== startTime;
     prevStartTimeRef.current = startTime;
 
+    console.log(`[VideoPlayer ${videoId}] Seeking to ${startTime}, segmentChanged=${segmentChanged}`);
+
     const timer = setTimeout(() => {
       try {
         video.currentTime = startTime;
+        console.log(`[VideoPlayer ${videoId}] Seeked to ${startTime}, now at ${video.currentTime}`);
       } catch (err) {
-        console.error("Failed to seek to startTime", err);
+        console.error(`[VideoPlayer ${videoId}] Failed to seek:`, err);
       }
       // Auto-play when segment changes from parent
       if (segmentChanged) {
+        console.log(`[VideoPlayer ${videoId}] Auto-playing after segment change`);
         setPlaying(true);
       }
     }, 100);
 
     return () => clearTimeout(timer);
-  }, [isVideoReady, startTime, videoUrl]);
+  }, [isVideoReady, startTime, videoUrl, videoId, endTime]);
 
   // Handle video ready
   const handleReady = () => {
     const videoElement = playerRef.current;
+    console.log(`[VideoPlayer ${videoId}] handleReady fired — playerRef=${!!videoElement}`);
     setIsVideoReady(true);
 
     if (videoElement && startTime != null) {

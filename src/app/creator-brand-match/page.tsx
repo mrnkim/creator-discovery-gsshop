@@ -302,10 +302,12 @@ export default function CreatorBrandMatch() {
   const [sourceSegment, setSourceSegment] = useState<{ startTime: number; endTime: number } | null>(null);
 
   const handleSourceSegmentClick = useCallback((startTime: number, endTime: number) => {
+    console.log(`[SourceSync] handleSourceSegmentClick — startTime=${startTime}, endTime=${endTime}`);
     setSourceSegment({ startTime, endTime });
   }, []);
 
   const handleSourceSegmentClear = useCallback(() => {
+    console.log(`[SourceSync] handleSourceSegmentClear`);
     setSourceSegment(null);
   }, []);
 
