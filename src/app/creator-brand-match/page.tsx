@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import axios from "axios";
 import {
@@ -298,21 +298,15 @@ export default function CreatorBrandMatch() {
   const [isAnalyzingTags, setIsAnalyzingTags] = useState(false);
   const [isReadyForAnimation, setIsReadyForAnimation] = useState(false);
 
-  // Source video player controls
-  const sourcePlayerRef = useRef<{ seekTo: (time: number) => void; play: () => void; pause: () => void } | null>(null);
-  const sourceSegmentRef = useRef<{ startTime: number; endTime: number } | null>(null);
+  // Source video segment (props-based: works reliably in production builds)
+  const [sourceSegment, setSourceSegment] = useState<{ startTime: number; endTime: number } | null>(null);
 
   const handleSourceSegmentClick = useCallback((startTime: number, endTime: number) => {
-    if (sourcePlayerRef.current) {
-      sourceSegmentRef.current = { startTime, endTime };
-      sourcePlayerRef.current.seekTo(startTime);
-      sourcePlayerRef.current.play();
-    }
+    setSourceSegment({ startTime, endTime });
   }, []);
 
   const handleSourceSegmentClear = useCallback(() => {
-    sourceSegmentRef.current = null;
-    sourcePlayerRef.current?.pause();
+    setSourceSegment(null);
   }, []);
 
   // Modal state
@@ -821,19 +815,10 @@ export default function CreatorBrandMatch() {
                     indexId={sourceIndexId}
                     className="w-full h-full max-w-[300px] max-h-[168px] lg:max-w-[612px] lg:max-h-[344px] rounded-[32px]"
                     initialMuted
+                    startTime={sourceSegment?.startTime}
+                    endTime={sourceSegment?.endTime}
                     showBrandTag={selectedVideoIndexId ? indexKeyMap[selectedVideoIndexId] !== "creator" : !selectedSources.includes("creator")}
                     showCreatorTag={selectedVideoIndexId ? indexKeyMap[selectedVideoIndexId] === "creator" : selectedSources.includes("creator")}
-                    onPlayerReady={(controls) => {
-                      sourcePlayerRef.current = controls;
-                    }}
-                    onTimeUpdate={(currentTime) => {
-                      if (sourceSegmentRef.current) {
-                        const { startTime, endTime } = sourceSegmentRef.current;
-                        if (currentTime >= endTime) {
-                          sourcePlayerRef.current?.seekTo(startTime);
-                        }
-                      }
-                    }}
                   />
                 </div>
                 {/* Video Tags - using Video component's data */}

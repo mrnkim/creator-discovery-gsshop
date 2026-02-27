@@ -155,17 +155,35 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
   //   return () => clearTimeout(timer);
   // }, [startTime, videoUrl]);
   // Seek to startTime when metadata is available or when startTime changes
+  const prevStartTimeRef = useRef<number | undefined>(undefined);
+
   useEffect(() => {
     if (!isVideoReady) return;
-    if (startTime == null) return;
+
+    // Segment cleared → pause if we were playing a segment
+    if (startTime == null) {
+      if (prevStartTimeRef.current != null) {
+        setPlaying(false);
+        prevStartTimeRef.current = undefined;
+      }
+      return;
+    }
+
     const video = playerRef.current;
     if (!video) return;
+
+    const segmentChanged = prevStartTimeRef.current !== startTime;
+    prevStartTimeRef.current = startTime;
 
     const timer = setTimeout(() => {
       try {
         video.currentTime = startTime;
       } catch (err) {
         console.error("Failed to seek to startTime", err);
+      }
+      // Auto-play when segment changes from parent
+      if (segmentChanged) {
+        setPlaying(true);
       }
     }, 100);
 
