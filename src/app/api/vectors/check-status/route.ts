@@ -30,9 +30,9 @@ export async function GET(req: Request) {
     }
 
     try {
-      // Use a zero vector with correct dimensions (1024) - only using filter to find vectors
+      // Use a zero vector with correct dimensions (512) - only using filter to find vectors
       const queryResponse = await pineconeIndex.query({
-        vector: Array(1024).fill(0), // Zero vector with 1024 dimensions to match the index dimension
+        vector: Array(512).fill(0), // Zero vector with 512 dimensions to match the index dimension
         filter: { tl_video_id: videoId },
         topK: 1,
         includeMetadata: true

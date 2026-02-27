@@ -112,14 +112,15 @@ export async function POST(request: Request) {
     // Determine vector ID base by sanitizing the title
     const vectorIdBase = sanitizeVectorId(videoTitle.replace(/\.[^/.]+$/, '')); // Remove file extension if present
 
-    // Determine category based on the index ID
-    const category = indexId.toLowerCase().includes('brand') ? 'brand' : 'creator';
+    // Determine category based on the index ID (3-way: brand, brand-ppl, creator)
+    const indexLower = indexId.toLowerCase();
+    const category = indexLower.includes('ppl') ? 'brand-ppl' : indexLower.includes('brand') ? 'brand' : 'creator';
 
     const vectorDimension = embedding.video_embedding.segments[0]?.float?.length || 0;
 
     // Check vector dimension
-    if (vectorDimension !== 1024) {
-      console.warn(`⚠️ WARNING: Vector dimension is ${vectorDimension}, expected 1024`);
+    if (vectorDimension !== 512) {
+      console.warn(`⚠️ WARNING: Vector dimension is ${vectorDimension}, expected 512`);
     }
 
     // Create vectors from embedding segments

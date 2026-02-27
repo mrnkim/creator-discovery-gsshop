@@ -37,7 +37,7 @@ export async function POST(req: Request) {
       topK: 10, // Reduced from 100 to 10 for better performance
       includeMetadata: true,
       includeValues: true,
-      vector: new Array(1024).fill(0)
+      vector: new Array(512).fill(0)
     });
 
     // If we found matching clips, search for similar videos for each match
@@ -51,7 +51,7 @@ export async function POST(req: Request) {
 
         const batchResults = await Promise.all(
           clipBatch.map(async (originalClip) => {
-            const vectorValues = originalClip.values || new Array(1024).fill(0);
+            const vectorValues = originalClip.values || new Array(512).fill(0);
             const queryResult = await index.query({
               vector: vectorValues,
               filter: {

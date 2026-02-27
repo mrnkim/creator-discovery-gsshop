@@ -16,9 +16,20 @@ import VideoPlayer from "./VideoPlayer";
 
 const ITEMS_PER_PAGE = 9;
 
+// Map index name to label color
+const INDEX_LABEL_COLORS: Record<string, { bg: string; text: string }> = {
+  Brand: { bg: "bg-gray-200", text: "text-gray-700" },
+  PPL: { bg: "bg-orange-100", text: "text-orange-700" },
+  Creator: { bg: "bg-green-100", text: "text-green-700" },
+};
+
 const SimilarVideoResults: React.FC<
-  SimilarVideoResultsProps & { sourceType?: "brand" | "creator"; textSearchTerm?: string }
-> = ({ results, indexId, sourceType, textSearchTerm }) => {
+  SimilarVideoResultsProps & {
+    sourceType?: "brand" | "brand-ppl" | "creator";
+    textSearchTerm?: string;
+    indexNameMap?: Record<string, string>;
+  }
+> = ({ results, indexId, sourceType, textSearchTerm, indexNameMap }) => {
   const [videoDetails, setVideoDetails] = useState<Record<string, VideoData>>(
     {}
   );
@@ -72,10 +83,12 @@ const SimilarVideoResults: React.FC<
           if (!videoId) return null;
 
           try {
+            // Use the result's own tl_index_id if available, otherwise fall back to first indexId
+            const resultIndexId = result.metadata?.tl_index_id || indexId.split(",")[0];
             // Use retry logic for videos that might be processing
             const details = await fetchVideoDetailsWithRetry(
               videoId,
-              indexId,
+              resultIndexId,
               false,
               1,
               500
@@ -429,12 +442,12 @@ const SimilarVideoResults: React.FC<
             >
               <VideoPlayer
                 videoId={videoId}
-                indexId={indexId}
+                indexId={result.metadata?.tl_index_id || indexId.split(",")[0]}
                 className="rounded-[20px]"
                 confidenceLabel={label}
                 confidenceColor={color as "green" | "yellow" | "red"}
                 initialMuted
-                showCreatorTag={sourceType === "brand"}
+                showCreatorTag={sourceType === "brand" || sourceType === "brand-ppl"}
                 showBrandTag={sourceType === "creator"}
                 onPlayerReady={(controls) => {
                   if (videoId) {
@@ -450,6 +463,21 @@ const SimilarVideoResults: React.FC<
                   }
                 }}
               />
+
+              {/* Index origin label */}
+              {indexNameMap && result.metadata?.tl_index_id && indexNameMap[result.metadata.tl_index_id] && (
+                <div className="mt-2 px-1">
+                  {(() => {
+                    const name = indexNameMap[result.metadata!.tl_index_id!];
+                    const colors = INDEX_LABEL_COLORS[name] || { bg: "bg-gray-100", text: "text-gray-600" };
+                    return (
+                      <span className={`inline-block text-xs font-medium px-2 py-0.5 rounded-full ${colors.bg} ${colors.text}`}>
+                        {name}
+                      </span>
+                    );
+                  })()}
+                </div>
+              )}
 
               {/* Matched segments */}
               {result.segmentMatches && result.segmentMatches.length > 0 && (

@@ -75,12 +75,12 @@ export async function GET(
   }
 
   // Base URL
+  // Base URL
   let url = `${TWELVELABS_API_BASE_URL}/indexes/${indexId}/videos/${videoId}`;
 
-  // Always include embedding query parameters if requested
+  // Use visual + audio embedding options (matches index configuration)
   if (requestEmbeddings) {
-    // Include only supported embedding options
-    url += `?embedding_option=visual-text&embedding_option=audio`;
+    url += `?embedding_option=visual&embedding_option=audio`;
   }
 
   const options = {

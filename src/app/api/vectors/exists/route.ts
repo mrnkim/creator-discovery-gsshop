@@ -22,10 +22,10 @@ export async function GET(request: Request) {
       filter.tl_index_id = indexId;
     }
 
-    // Query Pinecone using a zero vector with dimension 1024
+    // Query Pinecone using a zero vector with dimension 512
     // We're only interested in whether any vectors match our filter
     const queryResponse = await index.query({
-      vector: new Array(1024).fill(0),
+      vector: new Array(512).fill(0),
       filter: filter,
       topK: 1,
       includeMetadata: true

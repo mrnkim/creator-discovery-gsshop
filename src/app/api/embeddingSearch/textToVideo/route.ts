@@ -10,23 +10,22 @@ export async function POST(req: Request) {
     const { searchTerm, indexId } = await req.json();
     const index = getPineconeIndex();
 
-    const url = `${TWELVELABS_API_BASE_URL}/embed`;
+    const url = `${TWELVELABS_API_BASE_URL}/embed-v2`;
 
-    const formData = new FormData();
-    formData.append('text', searchTerm);
-    formData.append('text_truncate', 'end');
-    formData.append('model_name', 'Marengo-retrieval-2.7');
-
-    const { data: embedData } = await axios.post(url, formData, {
+    const { data: embedData } = await axios.post(url, {
+      input_type: 'text',
+      model_name: 'marengo3.0',
+      text: { input_text: searchTerm },
+    }, {
       headers: {
         'accept': 'application/json',
-        'Content-Type': 'multipart/form-data',
+        'Content-Type': 'application/json',
         'x-api-key': API_KEY,
       },
     });
 
-    // extract embedding vector from text_embedding object
-    const textEmbedding = embedData.text_embedding.segments[0].float;
+    // extract embedding vector from v2 response format
+    const textEmbedding = embedData.data?.[0]?.embedding;
 
     if (!textEmbedding) {
       throw new Error('Failed to generate embedding');
