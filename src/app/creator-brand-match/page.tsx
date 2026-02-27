@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import axios from "axios";
 import {
   fetchVideos,
@@ -14,7 +14,7 @@ import VideosDropDown from "@/components/VideosDropdown";
 import Video from "@/components/Video";
 import SimilarVideoResults from "@/components/SimilarVideoResults";
 import VideoModalSimple from "@/components/VideoModalSimple";
-import { VideoData, EmbeddingSearchResult, VideoPage } from "@/types";
+import { VideoData, EmbeddingSearchResult } from "@/types";
 import LoadingSpinner from "@/components/LoadingSpinner";
 import VideoPlayer from "@/components/VideoPlayer";
 
@@ -276,9 +276,10 @@ const INDEX_CONFIGS: IndexConfig[] = [
 
 export default function CreatorBrandMatch() {
   const description: string | undefined = undefined;
-  const [sourceType, setSourceType] = useState<IndexKey>("brand");
+  const [selectedSources, setSelectedSources] = useState<IndexKey[]>(["brand"]);
   const [selectedTargets, setSelectedTargets] = useState<IndexKey[]>(["brand-ppl", "creator"]);
   const [selectedVideoId, setSelectedVideoId] = useState<string | null>(null);
+  const [selectedVideoIndexId, setSelectedVideoIndexId] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [similarResults, setSimilarResults] = useState<EmbeddingSearchResult[]>(
     []
@@ -317,11 +318,20 @@ export default function CreatorBrandMatch() {
     creator: creatorIndexId,
   };
 
-  // Determine source index ID based on sourceType
-  const sourceIndexId = indexIdMap[sourceType];
+  // Reverse map: indexId -> IndexKey
+  const indexKeyMap: Record<string, IndexKey> = Object.entries(indexIdMap).reduce(
+    (acc, [key, id]) => {
+      if (id) acc[id] = key as IndexKey;
+      return acc;
+    },
+    {} as Record<string, IndexKey>
+  );
 
-  // Get available target options (all indices except the selected source)
-  const targetOptions = INDEX_CONFIGS.filter((c) => c.key !== sourceType);
+  // The sourceIndexId for the currently selected video
+  const sourceIndexId = selectedVideoIndexId || indexIdMap[selectedSources[0]];
+
+  // Get available target options (all indices except selected sources)
+  const targetOptions = INDEX_CONFIGS.filter((c) => !selectedSources.includes(c.key));
 
   // Build the index name map for result labels (indexId -> display name)
   const indexNameMap: Record<string, string> = Object.entries(indexIdMap).reduce(
@@ -335,68 +345,55 @@ export default function CreatorBrandMatch() {
   const showResults =
     similarResults.length > 0 && !isAnalyzing && embeddingsReady;
 
-  // Fetch videos for the source index (for dropdown selection)
-  const {
-    data: videosData,
-    fetchNextPage,
-    hasNextPage,
-    isFetchingNextPage,
-    isLoading: isLoadingVideos,
-  } = useInfiniteQuery<VideoPage>({
-    queryKey: ["videos", sourceIndexId, sourceType],
-    queryFn: ({ pageParam = 1 }) =>
-      fetchVideos(Number(pageParam), sourceIndexId),
-    getNextPageParam: (lastPage) => {
-      if (lastPage.page_info.page < lastPage.page_info.total_page) {
-        return lastPage.page_info.page + 1;
-      }
-      return undefined;
-    },
-    initialPageParam: 1,
-    enabled: !!sourceIndexId,
-    staleTime: 2 * 60 * 1000, // 2 minutes - videos don't change often
-    gcTime: 10 * 60 * 1000, // 10 minutes
-    refetchOnWindowFocus: false, // Don't refetch when window regains focus
-    refetchOnMount: false, // Don't refetch on component mount if data exists
-  });
-
-  // Fetch target videos for each possible target index
-  const { data: brandTargetVideos } = useQuery({
-    queryKey: ["targetVideos", brandIndexId],
+  // Fetch videos for each index (used for both source dropdown and target embeddings)
+  const { data: brandVideosData, isLoading: isLoadingBrand } = useQuery({
+    queryKey: ["allVideos", brandIndexId],
     queryFn: () => fetchVideos(1, brandIndexId, 20),
-    enabled: !!brandIndexId && sourceType !== "brand",
+    enabled: !!brandIndexId,
     staleTime: 5 * 60 * 1000,
     gcTime: 15 * 60 * 1000,
     refetchOnWindowFocus: false,
-    select: (data) => data.data,
   });
 
-  const { data: brandPplTargetVideos } = useQuery({
-    queryKey: ["targetVideos", brandPplIndexId],
+  const { data: brandPplVideosData, isLoading: isLoadingBrandPpl } = useQuery({
+    queryKey: ["allVideos", brandPplIndexId],
     queryFn: () => fetchVideos(1, brandPplIndexId, 20),
-    enabled: !!brandPplIndexId && sourceType !== "brand-ppl",
+    enabled: !!brandPplIndexId,
     staleTime: 5 * 60 * 1000,
     gcTime: 15 * 60 * 1000,
     refetchOnWindowFocus: false,
-    select: (data) => data.data,
   });
 
-  const { data: creatorTargetVideos } = useQuery({
-    queryKey: ["targetVideos", creatorIndexId],
+  const { data: creatorVideosData, isLoading: isLoadingCreator } = useQuery({
+    queryKey: ["allVideos", creatorIndexId],
     queryFn: () => fetchVideos(1, creatorIndexId, 20),
-    enabled: !!creatorIndexId && sourceType !== "creator",
+    enabled: !!creatorIndexId,
     staleTime: 5 * 60 * 1000,
     gcTime: 15 * 60 * 1000,
     refetchOnWindowFocus: false,
-    select: (data) => data.data,
   });
+
+  // All videos by index key
+  const allVideosMap: Record<IndexKey, VideoData[]> = {
+    brand: brandVideosData?.data || [],
+    "brand-ppl": brandPplVideosData?.data || [],
+    creator: creatorVideosData?.data || [],
+  };
+
+  // Build merged videosData for the dropdown (from selected source indices)
+  const isLoadingVideos = selectedSources.some((k) =>
+    k === "brand" ? isLoadingBrand : k === "brand-ppl" ? isLoadingBrandPpl : isLoadingCreator
+  );
+
+  const mergedSourceVideos: VideoData[] = selectedSources.flatMap((k) => allVideosMap[k]);
+
+  const videosData = {
+    pages: [{ data: mergedSourceVideos, page_info: { limit_per_page: 20, page: 1, total_duration: 0, total_page: 1, total_results: mergedSourceVideos.length } }],
+    pageParams: [1],
+  };
 
   // Map target index keys to their fetched videos
-  const targetVideosMap: Record<IndexKey, VideoData[]> = {
-    brand: brandTargetVideos || [],
-    "brand-ppl": brandPplTargetVideos || [],
-    creator: creatorTargetVideos || [],
-  };
+  const targetVideosMap: Record<IndexKey, VideoData[]> = allVideosMap;
 
   useEffect(() => {
     setIsReadyForAnimation(true);
@@ -408,11 +405,23 @@ export default function CreatorBrandMatch() {
     setSimilarResults([]);
     setEmbeddingsReady(false);
 
+    // Determine which index this video belongs to
+    let videoSourceIndexId = "";
+    for (const key of selectedSources) {
+      const found = allVideosMap[key].find((v) => v._id === videoId);
+      if (found) {
+        videoSourceIndexId = indexIdMap[key];
+        break;
+      }
+    }
+    setSelectedVideoIndexId(videoSourceIndexId);
+
     // Analyze videos to generate tags only if they don't already have user_metadata
-    if (sourceIndexId) {
+    const effectiveSourceIndexId = videoSourceIndexId || sourceIndexId;
+    if (effectiveSourceIndexId) {
       try {
         // First, fetch video details to check if user_metadata exists
-        const videoDetails = await fetchVideoDetails(videoId, sourceIndexId);
+        const videoDetails = await fetchVideoDetails(videoId, effectiveSourceIndexId);
 
         // Check if user_metadata exists and has meaningful data
         const hasUserMetadata =
@@ -428,7 +437,7 @@ export default function CreatorBrandMatch() {
 
         const response = await axios.post("/api/brand-mentions/analyze", {
           videoId,
-          indexId: sourceIndexId,
+          indexId: effectiveSourceIndexId,
           force: true,
           segmentAnalysis: true,
         });
@@ -642,14 +651,12 @@ export default function CreatorBrandMatch() {
     });
   };
 
-  // Auto-select first video when videos are loaded (for both brand and creator)
+  // Auto-select first video when videos are loaded
   useEffect(() => {
-    if (videosData?.pages?.[0]?.data?.[0] && !selectedVideoId) {
-      const firstVideo = videosData.pages[0].data[0];
-      // Trigger full selection flow so tags/analyze run immediately
-      handleVideoChange(firstVideo._id);
+    if (mergedSourceVideos.length > 0 && !selectedVideoId) {
+      handleVideoChange(mergedSourceVideos[0]._id);
     }
-  }, [videosData, selectedVideoId]);
+  }, [mergedSourceVideos.length, selectedVideoId]);
 
   // Dismiss status messages
   const dismissMessage = () => {
@@ -702,62 +709,72 @@ export default function CreatorBrandMatch() {
       <div className="flex-1 flex gap-8 min-h-0 w-full px-4 items-start justify-between py-6">
         {/* Left Side - Reference Video Selection */}
         <div className={leftPanelClasses}>
-          {/* Source Type Toggle (3-option) */}
+          {/* Source / Target Selection */}
           <div className="flex flex-col items-center gap-3">
-            <div className="relative flex max-w-lg items-center justify-center rounded-2xl bg-gray-100 outline outline-1 outline-gray-700 p-0.5">
-              <span
-                className="absolute inset-y-0.5 left-0.5 rounded-[14px] bg-[#1D1C1B] transition-transform duration-200 ease-out"
-                style={{
-                  width: `calc(${100 / INDEX_CONFIGS.length}% - 0.125rem)`,
-                  transform: `translateX(calc(${INDEX_CONFIGS.findIndex((c) => c.key === sourceType)} * 100%))`,
-                }}
-              />
+            {/* Source Index Checkboxes */}
+            <div className="flex items-center gap-4">
+              <span className="text-xs text-gray-500 font-medium">Source:</span>
               {INDEX_CONFIGS.map((config) => (
-                <button
-                  key={config.key}
-                  type="button"
-                  onClick={() => {
-                    setSourceType(config.key);
-                    // Update targets: select all except the new source
-                    setSelectedTargets(
-                      INDEX_CONFIGS.filter((c) => c.key !== config.key).map((c) => c.key)
-                    );
-                    setSelectedVideoId(null);
-                    setSimilarResults([]);
-                    setEmbeddingsReady(false);
-                  }}
-                  className={`relative z-10 flex-1 px-3 py-2 text-sm font-normal transition-colors whitespace-nowrap ${
-                    sourceType === config.key ? "text-white" : "text-gray-700"
-                  }`}
-                >
-                  {config.label}
-                </button>
+                <label key={config.key} className="flex items-center gap-1.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={selectedSources.includes(config.key)}
+                    onChange={(e) => {
+                      let newSources: IndexKey[];
+                      if (e.target.checked) {
+                        newSources = [...selectedSources, config.key];
+                      } else {
+                        if (selectedSources.length <= 1) return; // Keep at least 1
+                        newSources = selectedSources.filter((k) => k !== config.key);
+                      }
+                      setSelectedSources(newSources);
+                      // Auto-update targets: everything not in sources
+                      const newTargets = INDEX_CONFIGS
+                        .filter((c) => !newSources.includes(c.key))
+                        .map((c) => c.key);
+                      setSelectedTargets(newTargets);
+                      setSelectedVideoId(null);
+                      setSelectedVideoIndexId(null);
+                      setSimilarResults([]);
+                      setEmbeddingsReady(false);
+                    }}
+                    className="w-3.5 h-3.5 rounded border-gray-300 text-[#1D1C1B] focus:ring-gray-500"
+                  />
+                  <span className={`text-sm ${selectedSources.includes(config.key) ? "text-gray-900 font-medium" : "text-gray-500"}`}>
+                    {config.label}
+                  </span>
+                </label>
               ))}
             </div>
 
             {/* Target Index Checkboxes */}
             <div className="flex items-center gap-4">
-              <span className="text-xs text-gray-500">Target:</span>
-              {targetOptions.map((config) => (
-                <label key={config.key} className="flex items-center gap-1.5 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={selectedTargets.includes(config.key)}
-                    onChange={(e) => {
-                      if (e.target.checked) {
-                        setSelectedTargets((prev) => [...prev, config.key]);
-                      } else {
-                        // Don't allow deselecting all targets
-                        if (selectedTargets.length > 1) {
-                          setSelectedTargets((prev) => prev.filter((k) => k !== config.key));
+              <span className="text-xs text-gray-500 font-medium">Target:</span>
+              {targetOptions.length > 0 ? (
+                targetOptions.map((config) => (
+                  <label key={config.key} className="flex items-center gap-1.5 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={selectedTargets.includes(config.key)}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedTargets((prev) => [...prev, config.key]);
+                        } else {
+                          if (selectedTargets.length > 1) {
+                            setSelectedTargets((prev) => prev.filter((k) => k !== config.key));
+                          }
                         }
-                      }
-                    }}
-                    className="w-3.5 h-3.5 rounded border-gray-300 text-[#1D1C1B] focus:ring-gray-500"
-                  />
-                  <span className="text-sm text-gray-700">{config.label}</span>
-                </label>
-              ))}
+                      }}
+                      className="w-3.5 h-3.5 rounded border-gray-300 text-[#1D1C1B] focus:ring-gray-500"
+                    />
+                    <span className={`text-sm ${selectedTargets.includes(config.key) ? "text-gray-900 font-medium" : "text-gray-500"}`}>
+                      {config.label}
+                    </span>
+                  </label>
+                ))
+              ) : (
+                <span className="text-xs text-gray-400 italic">No targets available</span>
+              )}
             </div>
           </div>
 
@@ -767,10 +784,10 @@ export default function CreatorBrandMatch() {
               <VideosDropDown
                 indexId={sourceIndexId}
                 onVideoChange={handleVideoChange}
-                videosData={videosData || { pages: [], pageParams: [] }}
-                fetchNextPage={fetchNextPage}
-                hasNextPage={!!hasNextPage}
-                isFetchingNextPage={isFetchingNextPage}
+                videosData={videosData}
+                fetchNextPage={() => {}}
+                hasNextPage={false}
+                isFetchingNextPage={false}
                 isLoading={isLoadingVideos}
                 selectedFile={null}
                 taskId={null}
@@ -786,8 +803,8 @@ export default function CreatorBrandMatch() {
                     videoId={selectedVideoId}
                     indexId={sourceIndexId}
                     className="w-full h-full max-w-[300px] max-h-[168px] lg:max-w-[612px] lg:max-h-[344px] rounded-[32px]"
-                    showBrandTag={sourceType === "brand" || sourceType === "brand-ppl"}
-                    showCreatorTag={sourceType === "creator"}
+                    showBrandTag={selectedVideoIndexId ? indexKeyMap[selectedVideoIndexId] !== "creator" : !selectedSources.includes("creator")}
+                    showCreatorTag={selectedVideoIndexId ? indexKeyMap[selectedVideoIndexId] === "creator" : selectedSources.includes("creator")}
                   />
                 </div>
                 {/* Video Tags - using Video component's data */}
@@ -833,7 +850,7 @@ export default function CreatorBrandMatch() {
                 <SimilarVideoResults
                   results={similarResults}
                   indexId={selectedTargets.map((k) => indexIdMap[k]).join(",")}
-                  sourceType={sourceType}
+                  sourceType={selectedVideoIndexId ? indexKeyMap[selectedVideoIndexId] : selectedSources[0]}
                   textSearchTerm={textSearchTerm}
                   indexNameMap={indexNameMap}
                 />
