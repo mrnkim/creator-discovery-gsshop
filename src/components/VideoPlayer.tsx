@@ -62,6 +62,9 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
   const [loaded, setLoaded] = useState<number>(0);
   const [isVideoReady, setIsVideoReady] = useState<boolean>(false);
+  const onPlayerReadyRef = useRef(onPlayerReady);
+  onPlayerReadyRef.current = onPlayerReady;
+
   const shouldLoopSegment =
     startTime != null && endTime != null && endTime > startTime;
 
@@ -73,6 +76,18 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     setLoaded(0);
     setEnded(false);
   }, [videoUrl, videoId]);
+
+  // Notify parent with player controls once video is ready (useEffect guarantees ref is set)
+  useEffect(() => {
+    if (!isVideoReady || !playerRef.current) return;
+    onPlayerReadyRef.current?.({
+      seekTo: (time: number) => {
+        if (playerRef.current) playerRef.current.currentTime = time;
+      },
+      play: () => setPlaying(true),
+      pause: () => setPlaying(false),
+    });
+  }, [isVideoReady]);
 
   const {
     data: videoDetails,
@@ -172,22 +187,6 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
     if (autoplay) {
       setPlaying(true);
-    }
-
-    if (onPlayerReady && videoElement) {
-      onPlayerReady({
-        seekTo: (time: number) => {
-          if (playerRef.current) {
-            playerRef.current.currentTime = time;
-          }
-        },
-        play: () => {
-          setPlaying(true);
-        },
-        pause: () => {
-          setPlaying(false);
-        },
-      });
     }
   };
 

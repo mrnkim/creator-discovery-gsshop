@@ -3,6 +3,8 @@ import { VideoData, VideosDropDownProps } from "@/types";
 import LoadingSpinner from "./LoadingSpinner";
 import { DropdownIcon } from "./icons";
 
+const stripExtension = (name: string) => name.replace(/\.\w+$/, "");
+
 const VideosDropDown: React.FC<VideosDropDownProps> = ({
   onVideoChange,
   videosData,
@@ -35,8 +37,9 @@ const VideosDropDown: React.FC<VideosDropDownProps> = ({
     .flatMap((page: { data: VideoData[] }) => page.data)
     .find((video: VideoData) => video._id === footageVideoId);
 
-  const selectedVideoName =
-    selectedVideo?.system_metadata?.filename || "Select a video";
+  const selectedVideoName = selectedVideo?.system_metadata?.filename
+    ? stripExtension(selectedVideo.system_metadata.filename)
+    : "Select a video";
 
   if (isLoading) {
     return (
@@ -47,25 +50,19 @@ const VideosDropDown: React.FC<VideosDropDownProps> = ({
   }
 
   return (
-    <div className="relative w-full max-w-sm h-10 px-[18px] py-2 bg-stone-900/0 rounded-xl shadow-[inset_0px_0px_0px_1px_rgba(0,0,0,0.10)] outline outline-1 outline-gray-700 inline-flex justify-start items-center gap-1">
+    <div className="relative w-full h-10 px-[18px] py-2 bg-stone-900/0 rounded-xl shadow-[inset_0px_0px_0px_1px_rgba(0,0,0,0.10)] outline outline-1 outline-gray-700 inline-flex justify-start items-center gap-1 max-w-full">
       {/* <div className="relative w-full max-w-lg mx-auto border border-black rounded-xl"> */}
       {/* Dropdown button */}
       <button
         onClick={() => setIsOpen(!isOpen)}
         disabled={!!selectedFile || !!taskId}
-        className="cursor-pointer w-full text-left bg-gray-100 rounded-3xl text-black text-lg relative"
+        className="cursor-pointer w-full text-left bg-gray-100 rounded-3xl text-black text-md tracking-tight relative"
         style={{ fontFamily: "var(--font-sans)" }}
       >
         <div className="flex justify-between items-center">
           <div
-            className="truncate pr-8"
+            className="pr-8 truncate"
             title={selectedVideoName}
-            style={{
-              maxWidth: "calc(100% - 2rem)",
-              whiteSpace: "nowrap",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-            }}
           >
             {selectedVideoName}
           </div>
@@ -104,7 +101,7 @@ const VideosDropDown: React.FC<VideosDropDownProps> = ({
                     title={video.system_metadata?.filename}
                   >
                     <div
-                      className="text-md"
+                      className="text-md tracking-tight"
                       style={{
                         whiteSpace: "nowrap",
                         overflow: "hidden",
@@ -112,7 +109,7 @@ const VideosDropDown: React.FC<VideosDropDownProps> = ({
                         maxWidth: "100%",
                       }}
                     >
-                      {video.system_metadata?.filename}
+                      {video.system_metadata?.filename ? stripExtension(video.system_metadata.filename) : video._id}
                     </div>
                   </button>
                 ))}

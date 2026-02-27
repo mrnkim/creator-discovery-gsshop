@@ -20,41 +20,44 @@ export default function AdminPage() {
   const [isBulkAnalyzing, setIsBulkAnalyzing] = useState(false);
   const [bulkProgress, setBulkProgress] = useState({ current: 0, total: 0 });
   const [videos, setVideos] = useState<AdminVideo[]>([]);
-  const [filter, setFilter] = useState<'all' | 'brand' | 'creator'>('all');
+  const [filter, setFilter] = useState<'all' | 'brand' | 'ppl' | 'creator'>('all');
   const [search, setSearch] = useState('');
   const [brandEdits, setBrandEdits] = useState<Record<string, string>>({});
   const [savingBrandId, setSavingBrandId] = useState<string | null>(null);
+  const [editingMetaId, setEditingMetaId] = useState<string | null>(null);
+  const [metaDraft, setMetaDraft] = useState<Record<string, string>>({});
+  const [savingMetaId, setSavingMetaId] = useState<string | null>(null);
 
   const brandIndexId = process.env.NEXT_PUBLIC_BRAND_INDEX_ID || '';
+  const brandPplIndexId = process.env.NEXT_PUBLIC_BRAND_PPL_INDEX_ID || '';
   const creatorIndexId = process.env.NEXT_PUBLIC_CREATOR_INDEX_ID || '';
 
-  // Fetch videos from both indices
+  // Fetch videos from all indices
   useEffect(() => {
     const fetchAll = async () => {
-      if (!brandIndexId && !creatorIndexId) return;
+      if (!brandIndexId && !brandPplIndexId && !creatorIndexId) return;
       setIsLoading(true);
       setMessage(null);
       try {
-        const [brandRes, creatorRes] = await Promise.all([
+        const [brandRes, pplRes, creatorRes] = await Promise.all([
           brandIndexId ? axios.get('/api/videos', { params: { index_id: brandIndexId, limit: 50, page: 1 } }) : Promise.resolve({ data: { data: [] as VideoData[] } }),
+          brandPplIndexId ? axios.get('/api/videos', { params: { index_id: brandPplIndexId, limit: 50, page: 1 } }) : Promise.resolve({ data: { data: [] as VideoData[] } }),
           creatorIndexId ? axios.get('/api/videos', { params: { index_id: creatorIndexId, limit: 50, page: 1 } }) : Promise.resolve({ data: { data: [] as VideoData[] } }),
         ]);
 
-        const bItems: AdminVideo[] = ((brandRes.data?.data as VideoData[]) || []).map((v: VideoData) => ({
-          _id: v._id,
-          hls: v.hls,
-          system_metadata: v.system_metadata,
-          index_id: brandIndexId,
-          user_metadata: v.user_metadata as unknown as Record<string, unknown>,
-        }));
-        const cItems: AdminVideo[] = ((creatorRes.data?.data as VideoData[]) || []).map((v: VideoData) => ({
-          _id: v._id,
-          hls: v.hls,
-          system_metadata: v.system_metadata,
-          index_id: creatorIndexId,
-          user_metadata: v.user_metadata as unknown as Record<string, unknown>,
-        }));
-        setVideos([...bItems, ...cItems]);
+        const toAdmin = (data: VideoData[], indexId: string): AdminVideo[] =>
+          (data || []).map((v: VideoData) => ({
+            _id: v._id,
+            hls: v.hls,
+            system_metadata: v.system_metadata,
+            index_id: indexId,
+            user_metadata: v.user_metadata as unknown as Record<string, unknown>,
+          }));
+
+        const bItems = toAdmin(brandRes.data?.data as VideoData[], brandIndexId);
+        const pItems = toAdmin(pplRes.data?.data as VideoData[], brandPplIndexId);
+        const cItems = toAdmin(creatorRes.data?.data as VideoData[], creatorIndexId);
+        setVideos([...bItems, ...pItems, ...cItems]);
       } catch (err: unknown) {
         setMessage(err instanceof Error ? err.message : 'Failed to fetch videos');
       } finally {
@@ -62,12 +65,13 @@ export default function AdminPage() {
       }
     };
     fetchAll();
-  }, [brandIndexId, creatorIndexId]);
+  }, [brandIndexId, brandPplIndexId, creatorIndexId]);
 
   const filteredVideos = useMemo(() => {
     return videos
       .filter(v => {
         if (filter === 'brand' && v.index_id !== brandIndexId) return false;
+        if (filter === 'ppl' && v.index_id !== brandPplIndexId) return false;
         if (filter === 'creator' && v.index_id !== creatorIndexId) return false;
         if (search.trim()) {
           const title = v.system_metadata?.filename || v.system_metadata?.video_title || v._id;
@@ -76,7 +80,7 @@ export default function AdminPage() {
         return true;
       })
       .slice(0, 200);
-  }, [videos, filter, search, brandIndexId, creatorIndexId]);
+  }, [videos, filter, search, brandIndexId, brandPplIndexId, creatorIndexId]);
 
   const triggerAnalyze = async (vid?: string, idx?: string) => {
     const useVideoId = vid;
@@ -191,6 +195,61 @@ export default function AdminPage() {
     }
   };
 
+  const openMetaEditor = (v: AdminVideo) => {
+    const meta = (v.user_metadata || {}) as Record<string, unknown>;
+    const draft: Record<string, string> = {};
+    Object.entries(meta).forEach(([k, val]) => {
+      draft[k] = typeof val === 'string' ? val : JSON.stringify(val);
+    });
+    setMetaDraft(draft);
+    setEditingMetaId(v._id);
+  };
+
+  const addMetaField = () => {
+    const key = prompt('새 필드 이름을 입력하세요:');
+    if (key && key.trim()) {
+      setMetaDraft(prev => ({ ...prev, [key.trim()]: '' }));
+    }
+  };
+
+  const removeMetaField = (key: string) => {
+    setMetaDraft(prev => {
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+  };
+
+  const saveMetadata = async (videoId: string, indexId: string) => {
+    setSavingMetaId(videoId);
+    setMessage(null);
+    try {
+      const payload: Record<string, string> = {};
+      Object.entries(metaDraft).forEach(([k, v]) => {
+        payload[k] = v;
+      });
+      const res = await axios.put('/api/videos/updateUserMetadata', {
+        videoId,
+        indexId,
+        user_metadata: payload,
+      });
+      if (res.data?.success) {
+        setVideos(prev => prev.map(v => v._id === videoId ? {
+          ...v,
+          user_metadata: { ...payload },
+        } : v));
+        setMessage('Metadata saved successfully');
+        setEditingMetaId(null);
+      } else {
+        setMessage(res.data?.error || 'Failed to save metadata');
+      }
+    } catch {
+      setMessage('Failed to save metadata');
+    } finally {
+      setSavingMetaId(null);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-white">
       <main className="container mx-auto px-4 py-8">
@@ -245,12 +304,13 @@ export default function AdminPage() {
               <label className="text-sm">Filter:</label>
               <select
                 value={filter}
-                onChange={(e) => setFilter(e.target.value as 'all' | 'brand' | 'creator')}
+                onChange={(e) => setFilter(e.target.value as 'all' | 'brand' | 'ppl' | 'creator')}
                 className="px-2 py-1 border rounded"
               >
                 <option value="all">All</option>
-                <option value="brand">Brands</option>
-                <option value="creator">Creators</option>
+                <option value="brand">Brand</option>
+                <option value="ppl">PPL</option>
+                <option value="creator">Creator</option>
               </select>
             </div>
             <input
@@ -279,11 +339,15 @@ export default function AdminPage() {
                   <div className="p-3 space-y-2">
                     <div className="flex items-center justify-between">
                       <h4 className="font-medium text-sm truncate">{v.system_metadata?.filename || v.system_metadata?.video_title || v._id}</h4>
-                      <span className={clsx('text-xs px-2 py-0.5 rounded', v.index_id === brandIndexId ? 'bg-purple-100 text-purple-700' : 'bg-green-100 text-green-700')}>
-                        {v.index_id === brandIndexId ? 'Brand' : 'Creator'}
+                      <span className={clsx('text-xs px-2 py-0.5 rounded',
+                        v.index_id === brandIndexId ? 'bg-purple-100 text-purple-700'
+                          : v.index_id === brandPplIndexId ? 'bg-orange-100 text-orange-700'
+                          : 'bg-green-100 text-green-700'
+                      )}>
+                        {v.index_id === brandIndexId ? 'Brand' : v.index_id === brandPplIndexId ? 'PPL' : 'Creator'}
                       </span>
                     </div>
-                    {v.index_id === brandIndexId && (
+                    {(v.index_id === brandIndexId || v.index_id === brandPplIndexId) && (
                       <div className="space-y-2">
                         <label className="block text-xs text-gray-600">Brand override</label>
                         <div className="flex items-center gap-2">
@@ -325,7 +389,64 @@ export default function AdminPage() {
                       >
                         {analyzingVideoId === v._id ? 'Analyzing...' : 'Force Re-analyze'}
                       </button>
+                      <button
+                        onClick={() => editingMetaId === v._id ? setEditingMetaId(null) : openMetaEditor(v)}
+                        className={clsx(
+                          'px-2 py-1 text-xs rounded',
+                          editingMetaId === v._id
+                            ? 'bg-gray-800 text-white'
+                            : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                        )}
+                      >
+                        {editingMetaId === v._id ? 'Close' : 'Edit Metadata'}
+                      </button>
                     </div>
+                    {/* Metadata Editor */}
+                    {editingMetaId === v._id && (
+                      <div className="mt-2 p-3 bg-gray-50 border rounded space-y-2 text-xs">
+                        {Object.entries(metaDraft).length === 0 && (
+                          <div className="text-gray-400 italic">No metadata fields</div>
+                        )}
+                        {Object.entries(metaDraft).map(([key, val]) => (
+                          <div key={key} className="flex items-start gap-1">
+                            <span className="font-mono text-gray-500 min-w-[80px] pt-1 break-all">{key}</span>
+                            <textarea
+                              value={val}
+                              onChange={(e) => setMetaDraft(prev => ({ ...prev, [key]: e.target.value }))}
+                              rows={val.length > 80 ? 3 : 1}
+                              className="flex-1 px-2 py-1 border rounded font-mono text-xs resize-y"
+                            />
+                            <button
+                              onClick={() => removeMetaField(key)}
+                              className="text-red-400 hover:text-red-600 px-1 pt-1"
+                              title="Remove field"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        ))}
+                        <div className="flex items-center gap-2 pt-1 border-t">
+                          <button
+                            onClick={addMetaField}
+                            className="px-2 py-1 text-xs rounded bg-gray-200 hover:bg-gray-300 text-gray-700"
+                          >
+                            + Add Field
+                          </button>
+                          <button
+                            onClick={() => saveMetadata(v._id, v.index_id)}
+                            disabled={savingMetaId === v._id}
+                            className={clsx(
+                              'px-3 py-1 text-xs rounded',
+                              savingMetaId === v._id
+                                ? 'bg-gray-300 text-gray-500 cursor-wait'
+                                : 'bg-black text-white hover:bg-gray-800'
+                            )}
+                          >
+                            {savingMetaId === v._id ? 'Saving...' : 'Save'}
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}

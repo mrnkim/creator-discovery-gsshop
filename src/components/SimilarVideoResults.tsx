@@ -28,8 +28,10 @@ const SimilarVideoResults: React.FC<
     sourceType?: "brand" | "brand-ppl" | "creator";
     textSearchTerm?: string;
     indexNameMap?: Record<string, string>;
+    onSourceSegmentClick?: (startTime: number, endTime: number) => void;
+    onSourceSegmentClear?: () => void;
   }
-> = ({ results, indexId, sourceType, textSearchTerm, indexNameMap }) => {
+> = ({ results, indexId, sourceType, textSearchTerm, indexNameMap, onSourceSegmentClick, onSourceSegmentClear }) => {
   const [videoDetails, setVideoDetails] = useState<Record<string, VideoData>>(
     {}
   );
@@ -40,6 +42,8 @@ const SimilarVideoResults: React.FC<
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [loadingMore, setLoadingMore] = useState<boolean>(false);
   const [expandedSegments, setExpandedSegments] = useState<Record<string, boolean>>({});
+  const [clickedVideoId, setClickedVideoId] = useState<string | null>(null);
+  const [activeSegmentIndex, setActiveSegmentIndex] = useState<Record<string, number>>({});
   const isFetchingRef = useRef<boolean>(false);
   const playerControlsRef = useRef<Record<string, { seekTo: (time: number) => void; play: () => void; pause: () => void }>>({});
   const activeSegmentRef = useRef<Record<string, { startTime: number; endTime: number }>>({});
@@ -427,17 +431,35 @@ const SimilarVideoResults: React.FC<
               key={index}
               className="flex flex-col"
               onMouseEnter={() => {
+                // Pause any previously clicked video that's different from this one
+                if (clickedVideoId && clickedVideoId !== videoId && playerControlsRef.current[clickedVideoId]) {
+                  playerControlsRef.current[clickedVideoId].pause();
+                  delete activeSegmentRef.current[clickedVideoId];
+                  setActiveSegmentIndex(prev => { const next = { ...prev }; delete next[clickedVideoId!]; return next; });
+                  setClickedVideoId(null);
+                }
                 if (videoId && playerControlsRef.current[videoId] && firstSegment) {
                   activeSegmentRef.current[videoId] = { startTime: firstSegment.targetStartTime, endTime: firstSegment.targetEndTime };
+                  setActiveSegmentIndex(prev => ({ ...prev, [videoId]: 0 }));
                   playerControlsRef.current[videoId].seekTo(firstSegment.targetStartTime);
                   playerControlsRef.current[videoId].play();
                 }
+                if (onSourceSegmentClick && firstSegment?.sourceStartTime !== undefined && firstSegment?.sourceEndTime !== undefined) {
+                  onSourceSegmentClick(firstSegment.sourceStartTime, firstSegment.sourceEndTime);
+                }
               }}
               onMouseLeave={() => {
+                // If this video had a segment clicked, keep playing
+                if (videoId && clickedVideoId === videoId) {
+                  return;
+                }
                 if (videoId && playerControlsRef.current[videoId]) {
                   playerControlsRef.current[videoId].pause();
                   delete activeSegmentRef.current[videoId];
+                  setActiveSegmentIndex(prev => { const next = { ...prev }; delete next[videoId!]; return next; });
                 }
+                // Also pause/clear source video segment
+                onSourceSegmentClear?.();
               }}
             >
               <VideoPlayer
@@ -490,13 +512,28 @@ const SimilarVideoResults: React.FC<
                     ).map((seg, segIdx) => (
                       <div
                         key={segIdx}
-                        className="flex items-center gap-2 text-xs text-gray-600 bg-gray-50 rounded-lg px-2.5 py-1.5 cursor-pointer hover:bg-gray-100 transition-colors"
+                        className={`flex items-center gap-2 text-xs rounded-lg px-2.5 py-1.5 cursor-pointer transition-colors ${
+                          videoId && activeSegmentIndex[videoId] === segIdx
+                            ? "bg-blue-50 ring-1 ring-blue-300 text-blue-700"
+                            : "text-gray-600 bg-gray-50 hover:bg-gray-100"
+                        }`}
                         onClick={(e) => {
                           e.stopPropagation();
                           if (videoId && playerControlsRef.current[videoId]) {
+                            // Pause any previously clicked video
+                            if (clickedVideoId && clickedVideoId !== videoId && playerControlsRef.current[clickedVideoId]) {
+                              playerControlsRef.current[clickedVideoId].pause();
+                              delete activeSegmentRef.current[clickedVideoId];
+                              setActiveSegmentIndex(prev => { const next = { ...prev }; delete next[clickedVideoId!]; return next; });
+                            }
                             activeSegmentRef.current[videoId] = { startTime: seg.targetStartTime, endTime: seg.targetEndTime };
+                            setActiveSegmentIndex(prev => ({ ...prev, [videoId!]: segIdx }));
+                            setClickedVideoId(videoId);
                             playerControlsRef.current[videoId].seekTo(seg.targetStartTime);
                             playerControlsRef.current[videoId].play();
+                          }
+                          if (onSourceSegmentClick && seg.sourceStartTime !== undefined && seg.sourceEndTime !== undefined) {
+                            onSourceSegmentClick(seg.sourceStartTime, seg.sourceEndTime);
                           }
                         }}
                       >
