@@ -171,7 +171,14 @@ export async function GET(
       console.warn(`⚠️ Embedding was requested but not found in API response!`);
     }
 
-    return NextResponse.json(responseData);
+    const res = NextResponse.json(responseData);
+    res.headers.set(
+      'Cache-Control',
+      requestEmbeddings
+        ? 'private, max-age=60, stale-while-revalidate=120'
+        : 'private, max-age=600, stale-while-revalidate=1200'
+    );
+    return res;
 
   } catch (e) {
     console.error('❌ Error fetching video details:', e);

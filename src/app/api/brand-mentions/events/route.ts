@@ -34,7 +34,9 @@ export async function GET(request: NextRequest) {
       try {
         const { events, analysis } = await getEventsFromMetadata(videoId, indexId);
         if (events && events.length > 0) {
-          return NextResponse.json({ events, analysis });
+          const res = NextResponse.json({ events, analysis });
+          res.headers.set('Cache-Control', 'private, max-age=300, stale-while-revalidate=600');
+          return res;
         }
       } catch (error) {
         console.warn(`⚠️ Failed to retrieve cached events: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -61,10 +63,12 @@ export async function GET(request: NextRequest) {
     }
 
     const analyzeResult = await analyzeResponse.json();
-    return NextResponse.json({
+    const res = NextResponse.json({
       events: analyzeResult.events,
       analysis: analyzeResult.analysis || {}
     });
+    res.headers.set('Cache-Control', 'private, max-age=300, stale-while-revalidate=600');
+    return res;
   } catch (error) {
     console.error('❌ Error retrieving brand mention events:', error);
     return NextResponse.json(

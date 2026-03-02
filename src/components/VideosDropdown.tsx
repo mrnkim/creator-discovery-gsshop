@@ -5,6 +5,11 @@ import { DropdownIcon } from "./icons";
 
 const stripExtension = (name: string) => name.replace(/\.\w+$/, "");
 
+const INDEX_LABEL_COLORS: Record<string, { bg: string; text: string }> = {
+  Brand: { bg: "#45423F", text: "#ECECEC" },
+  PPL: { bg: "#7D500C", text: "#FDE3A2" },
+};
+
 const VideosDropDown: React.FC<VideosDropDownProps> = ({
   onVideoChange,
   videosData,
@@ -15,6 +20,7 @@ const VideosDropDown: React.FC<VideosDropDownProps> = ({
   selectedFile,
   taskId,
   footageVideoId,
+  indexLabelMap,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
 
@@ -41,6 +47,22 @@ const VideosDropDown: React.FC<VideosDropDownProps> = ({
     ? stripExtension(selectedVideo.system_metadata.filename)
     : "Select a video";
 
+  const showLabels = !!indexLabelMap && Object.keys(indexLabelMap).length > 0;
+
+  const getLabelBadge = (video: VideoData) => {
+    if (!showLabels || !indexLabelMap![video._id]) return null;
+    const label = indexLabelMap![video._id];
+    const colors = INDEX_LABEL_COLORS[label] || { bg: "#45423F", text: "#ECECEC" };
+    return (
+      <span
+        className="inline-block text-[10px] font-normal uppercase px-1 py-0.5 rounded-md border flex-shrink-0"
+        style={{ backgroundColor: colors.bg, borderColor: colors.text, color: colors.text }}
+      >
+        {label}
+      </span>
+    );
+  };
+
   if (isLoading) {
     return (
       <div className="flex justify-center items-center h-full my-5">
@@ -61,9 +83,10 @@ const VideosDropDown: React.FC<VideosDropDownProps> = ({
       >
         <div className="flex justify-between items-center">
           <div
-            className="pr-8 truncate"
+            className="pr-8 truncate flex items-center gap-1.5"
             title={selectedVideoName}
           >
+            {showLabels && selectedVideo && getLabelBadge(selectedVideo)}
             {selectedVideoName}
           </div>
           <div
@@ -101,7 +124,7 @@ const VideosDropDown: React.FC<VideosDropDownProps> = ({
                     title={video.system_metadata?.filename}
                   >
                     <div
-                      className="text-md tracking-tight"
+                      className="text-md tracking-tight flex items-center gap-1.5"
                       style={{
                         whiteSpace: "nowrap",
                         overflow: "hidden",
@@ -109,7 +132,8 @@ const VideosDropDown: React.FC<VideosDropDownProps> = ({
                         maxWidth: "100%",
                       }}
                     >
-                      {video.system_metadata?.filename ? stripExtension(video.system_metadata.filename) : video._id}
+                      {getLabelBadge(video)}
+                      <span className="truncate">{video.system_metadata?.filename ? stripExtension(video.system_metadata.filename) : video._id}</span>
                     </div>
                   </button>
                 ))}

@@ -30,6 +30,7 @@ export interface VideosDropDownProps {
   selectedFile: File | null;
   taskId: string | null;
   footageVideoId: string | null;
+  indexLabelMap?: Record<string, string>;
 }
 
 // Video Data Types

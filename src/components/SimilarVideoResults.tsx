@@ -16,11 +16,11 @@ import VideoPlayer from "./VideoPlayer";
 
 const ITEMS_PER_PAGE = 9;
 
-// Map index name to label color
-const INDEX_LABEL_COLORS: Record<string, { bg: string; text: string }> = {
-  Brand: { bg: "bg-gray-200", text: "text-gray-700" },
-  PPL: { bg: "bg-orange-100", text: "text-orange-700" },
-  Creator: { bg: "bg-green-100", text: "text-green-700" },
+// Map index name to label style (Twelve Labs brand palette)
+const INDEX_LABEL_STYLES: Record<string, { bg: string; border: string; text: string }> = {
+  Brand: { bg: "#45423F", border: "#ECECEC", text: "#ECECEC" },
+  PPL: { bg: "#7D500C", border: "#FDE3A2", text: "#FDE3A2" },
+  Creator: { bg: "#307108", border: "#BFF3A4", text: "#BFF3A4" },
 };
 
 const SimilarVideoResults: React.FC<
@@ -445,14 +445,6 @@ const SimilarVideoResults: React.FC<
             return null;
           };
 
-          console.log(`[SimilarVideoResults] videoId=${videoId}, isPplResult=${isPplResult}, sourceType=${sourceType}, creatorName="${extractCreatorName()}"`, {
-            tl_index_id: result.metadata?.tl_index_id,
-            mapped: result.metadata?.tl_index_id && indexNameMap?.[result.metadata.tl_index_id],
-            videoData_user_metadata: videoData?.user_metadata,
-            videoData_system_metadata: videoData?.system_metadata,
-            pinecone_metadata: result.metadata,
-          });
-
           return (
             <div
               key={index}
@@ -519,9 +511,12 @@ const SimilarVideoResults: React.FC<
                 <div className="mt-2 px-1">
                   {(() => {
                     const name = indexNameMap[result.metadata!.tl_index_id!];
-                    const colors = INDEX_LABEL_COLORS[name] || { bg: "bg-gray-100", text: "text-gray-600" };
+                    const colors = INDEX_LABEL_STYLES[name] || INDEX_LABEL_STYLES.Brand;
                     return (
-                      <span className={`inline-block text-xs font-medium px-2 py-0.5 rounded-full ${colors.bg} ${colors.text}`}>
+                      <span
+                        className="inline-block text-xs font-normal uppercase px-1 py-0.5 rounded-md border"
+                        style={{ backgroundColor: colors.bg, borderColor: colors.border, color: colors.text }}
+                      >
                         {name}
                       </span>
                     );

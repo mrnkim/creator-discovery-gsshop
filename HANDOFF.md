@@ -95,3 +95,43 @@
 
 ### Handoff 파일 통합
 - `HANDOFF-segment-match-visualization.md` → `HANDOFF.md`로 병합, 파일 삭제
+
+## 2026-03-02: Caching Strategy & First-Video Playback Fix
+
+### Caching Strategy Improvement
+앱 전반적 로딩 속도 개선을 위한 캐싱 강화.
+
+**React Query 글로벌 기본값** (`ReactQueryProvider.tsx`):
+- `staleTime`: 30s → 5분, `gcTime`: 30분 추가, `refetchOnReconnect: false`
+
+**비디오 상세 쿼리 캐시** (`VideoPlayer.tsx`, `Video.tsx`, `page.tsx`):
+- `staleTime: 10분`, `gcTime: 1시간` — 세션 중 거의 변하지 않는 메타데이터
+
+**vectorExistenceCache TTL 분리** (`apiHooks.ts`):
+- `exists=true` → 30분, `exists=false` → 2분
+- `storeVectors` 성공 시 캐시 즉시 `true`로 업데이트
+
+**API 라우트 Cache-Control 헤더** (5개 라우트):
+- `api/videos/route.ts` — `max-age=300, stale-while-revalidate=600`
+- `api/videos/[videoId]/route.ts` — embed: `max-age=60`, 일반: `max-age=600`
+- `api/vectors/exists/route.ts`, `api/vectors/check-status/route.ts` — exists별 분리
+- `api/brand-mentions/events/route.ts` — `max-age=300, stale-while-revalidate=600`
+
+**비디오 목록 쿼리 TTL 연장** (`page.tsx`):
+- `staleTime`: 5분 → 10분, `gcTime`: 15분 → 30분
+
+**검색 결과 캐싱** (`page.tsx`):
+- `useQueryClient`로 검색 결과 수동 캐싱 (키: `["searchResults", videoId, targets]`, TTL 10분)
+- 같은 비디오/타겟 조합 재검색 시 즉시 결과 반환
+
+### First Source Video Playback Fix
+
+**Problem**: 첫 번째 자동 선택된 소스 비디오가 재생 불가 (`isVideoReady`가 영구적으로 `false`)
+
+**Root cause**: react-player v3이 `hls-video-element/react`를 `React.lazy` + Suspense로 lazy-load. 첫 HLS 비디오에서 Suspense unmount/remount 사이클 중 `loadstart` 이벤트(→ `onReady`)가 React 핸들러 재연결 전에 발생. 이후 비디오는 모듈이 이미 캐시되어 있어 정상 동작.
+
+**Fix** (`VideoPlayer.tsx`):
+- `handleReady`를 `useCallback`으로 변환 + `isVideoReady` guard로 중복 실행 방지
+- `readyState` 폴링 fallback `useEffect` 추가 — 250ms 간격으로 `video.readyState >= 2` 체크
+- 이벤트 미스 시에도 안정적으로 ready 상태 전환
+- `togglePlayPause`에서 `video.play()` 직접 호출 (user gesture stack 유지)

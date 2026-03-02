@@ -84,7 +84,6 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
   // Notify parent with player controls once video is ready (useEffect guarantees ref is set)
   useEffect(() => {
-    console.log(`[VideoPlayer ${videoId}] onPlayerReady effect — isVideoReady=${isVideoReady}, playerRef=${!!playerRef.current}, hasCallback=${!!onPlayerReadyRef.current}`);
     if (!isVideoReady || !playerRef.current) return;
     onPlayerReadyRef.current?.({
       seekTo: (time: number) => {
@@ -108,7 +107,11 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
       return fetchVideoDetails(videoId!, indexId);
     },
     enabled: !!indexId && !!videoId,
+    staleTime: 10 * 60 * 1000, // 10 minutes
+    gcTime: 60 * 60 * 1000, // 1 hour
   });
+
+  const resolvedSrc = videoUrl || videoDetails?.hls?.video_url || undefined;
 
   const handleTimeUpdate = (event: React.SyntheticEvent<HTMLVideoElement>) => {
     const video = event.currentTarget;
@@ -164,14 +167,11 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const prevStartTimeRef = useRef<number | undefined>(undefined);
 
   useEffect(() => {
-    console.log(`[VideoPlayer ${videoId}] startTime effect — isVideoReady=${isVideoReady}, startTime=${startTime}, endTime=${endTime}, playerRef=${!!playerRef.current}`);
-
     if (!isVideoReady) return;
 
     // Segment cleared → pause if we were playing a segment
     if (startTime == null) {
       if (prevStartTimeRef.current != null) {
-        console.log(`[VideoPlayer ${videoId}] Segment cleared → pausing`);
         setPlaying(false);
         prevStartTimeRef.current = undefined;
       }
@@ -179,26 +179,18 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     }
 
     const video = playerRef.current;
-    if (!video) {
-      console.warn(`[VideoPlayer ${videoId}] playerRef.current is NULL despite isVideoReady=true`);
-      return;
-    }
+    if (!video) return;
 
     const segmentChanged = prevStartTimeRef.current !== startTime;
     prevStartTimeRef.current = startTime;
 
-    console.log(`[VideoPlayer ${videoId}] Seeking to ${startTime}, segmentChanged=${segmentChanged}`);
-
     const timer = setTimeout(() => {
       try {
         video.currentTime = startTime;
-        console.log(`[VideoPlayer ${videoId}] Seeked to ${startTime}, now at ${video.currentTime}`);
       } catch (err) {
-        console.error(`[VideoPlayer ${videoId}] Failed to seek:`, err);
+        console.error("Failed to seek to startTime", err);
       }
-      // Auto-play when segment changes from parent
       if (segmentChanged) {
-        console.log(`[VideoPlayer ${videoId}] Auto-playing after segment change`);
         setPlaying(true);
       }
     }, 100);
@@ -207,9 +199,9 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
   }, [isVideoReady, startTime, videoUrl, videoId, endTime]);
 
   // Handle video ready
-  const handleReady = () => {
+  const handleReady = useCallback(() => {
+    if (isVideoReady) return; // prevent double-fire
     const videoElement = playerRef.current;
-    console.log(`[VideoPlayer ${videoId}] handleReady fired — playerRef=${!!videoElement}`);
     setIsVideoReady(true);
     onReadyChange?.(true);
 
@@ -224,7 +216,25 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     if (autoplay) {
       setPlaying(true);
     }
-  };
+  }, [isVideoReady, resolvedSrc, videoId, startTime, autoplay, onReadyChange]);
+
+  // Fallback: poll readyState when stuck in not-ready state.
+  // react-player v3 lazy-loads hls-video-element via Suspense, which can cause
+  // the first video's onReady/onCanPlay events to fire before React reattaches
+  // handlers. Polling catches the case where the element is ready but events
+  // were missed.
+  useEffect(() => {
+    if (isVideoReady || !resolvedSrc) return;
+
+    const interval = setInterval(() => {
+      const video = playerRef.current;
+      if (video && video.readyState >= 2) {
+        handleReady();
+      }
+    }, 250);
+
+    return () => clearInterval(interval);
+  }, [isVideoReady, resolvedSrc, handleReady, videoId]);
 
   const handleProgressBarClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!playerRef.current || !playerContainerRef.current) return;
@@ -238,14 +248,36 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
   };
 
   const togglePlayPause = () => {
-    const newPlayingState = !playing;
+    const video = playerRef.current;
+    if (!video) return;
 
-    if (newPlayingState) {
-      // Playing - just play without changing mute state
-      setPlaying(true);
-    } else {
-      // Pausing - just pause
+    if (playing) {
+      video.pause();
       setPlaying(false);
+    } else {
+      // Call play() directly in the click handler (user gesture stack)
+      // so the browser doesn't block it after layout transitions
+      const playPromise = video.play();
+      if (playPromise !== undefined) {
+        playPromise
+          .then(() => {
+            setPlaying(true);
+          })
+          .catch(() => {
+            // If unmuted play fails, try muted (autoplay policy)
+            video.muted = true;
+            video.play()
+              .then(() => {
+                setPlaying(true);
+                setMuted(true);
+              })
+              .catch(() => {
+                setPlaying(false);
+              });
+          });
+      } else {
+        setPlaying(true);
+      }
     }
   };
 
@@ -333,15 +365,12 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const getCreatorName = (
     videoData: VideoDetails | undefined
   ): string | null => {
-    console.log(`[VideoPlayer ${videoId}] getCreatorName called — showCreatorTag=${showCreatorTag}, hasData=${!!videoData}, user_metadata=`, videoData?.user_metadata);
     if (!videoData || !videoData.user_metadata) return null;
 
     const creator =
       videoData.user_metadata.creator ||
       videoData.user_metadata.video_creator ||
       videoData.user_metadata.creator_id;
-
-    console.log(`[VideoPlayer ${videoId}] creator field value="${creator}"`);
 
     if (creator && typeof creator === "string" && creator.trim().length > 0) {
       return creator.trim();
@@ -404,7 +433,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
         width="100%"
         height="100%"
         ref={playerRef}
-        src={videoUrl || videoDetails?.hls?.video_url || undefined}
+        src={resolvedSrc}
         playing={playing}
         muted={muted}
         volume={muted ? 0 : 1}
@@ -432,7 +461,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
           setPlaying(false);
         }}
         onError={(error) => {
-          console.error("Video player error:", error);
+          console.error("VideoPlayer error:", error);
         }}
         onDurationChange={(event) => setDuration(event.currentTarget.duration)}
         onTimeUpdate={handleTimeUpdate}

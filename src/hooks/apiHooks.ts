@@ -9,7 +9,8 @@ import {
 
 // Cache for vector existence checks to avoid repeated API calls
 const vectorExistenceCache = new Map<string, { exists: boolean; timestamp: number }>();
-const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+const CACHE_DURATION_EXISTS = 30 * 60 * 1000; // 30 minutes (vectors are never deleted)
+const CACHE_DURATION_NOT_EXISTS = 2 * 60 * 1000; // 2 minutes (may change after store)
 
 // Cache for failed video lookups to prevent repeated API calls for missing videos
 const failedVideoCache = new Map<string, { timestamp: number; error: string }>();
@@ -179,10 +180,13 @@ export async function checkVideoVectorsExist(
   const cacheKey = `${videoId}-${indexId}`;
   const now = Date.now();
 
-  // Check cache first
+  // Check cache first (longer TTL for exists=true since vectors are never deleted)
   const cached = vectorExistenceCache.get(cacheKey);
-  if (cached && (now - cached.timestamp) < CACHE_DURATION) {
-    return cached.exists;
+  if (cached) {
+    const ttl = cached.exists ? CACHE_DURATION_EXISTS : CACHE_DURATION_NOT_EXISTS;
+    if ((now - cached.timestamp) < ttl) {
+      return cached.exists;
+    }
   }
 
   try {
@@ -226,6 +230,11 @@ export async function storeVectors(
       embedding,
       indexId
     });
+    if (response.data.success) {
+      // Immediately update vector existence cache
+      const cacheKey = `${videoId}-${indexId}`;
+      vectorExistenceCache.set(cacheKey, { exists: true, timestamp: Date.now() });
+    }
     return response.data.success;
   } catch (error) {
     console.error(`Error storing vectors for ${videoId}:`, error);

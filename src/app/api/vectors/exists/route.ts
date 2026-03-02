@@ -31,9 +31,15 @@ export async function GET(request: Request) {
       includeMetadata: true
     });
 
-    return NextResponse.json({
-      exists: queryResponse.matches.length > 0
-    });
+    const exists = queryResponse.matches.length > 0;
+    const res = NextResponse.json({ exists });
+    res.headers.set(
+      'Cache-Control',
+      exists
+        ? 'private, max-age=600, stale-while-revalidate=1200'
+        : 'private, max-age=30, stale-while-revalidate=60'
+    );
+    return res;
   } catch (error) {
     console.error('Error checking if vector exists:', error);
     return NextResponse.json({ 

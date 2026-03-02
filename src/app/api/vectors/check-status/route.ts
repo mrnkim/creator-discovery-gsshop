@@ -41,7 +41,7 @@ export async function GET(req: Request) {
       const matchCount = queryResponse.matches?.length || 0;
       const processed = Boolean(matchCount);
 
-      return NextResponse.json({
+      const res = NextResponse.json({
         processed,
         source: 'pinecone',
         category,
@@ -55,6 +55,13 @@ export async function GET(req: Request) {
           first_match_metadata: queryResponse.matches?.[0]?.metadata
         }
       });
+      res.headers.set(
+        'Cache-Control',
+        processed
+          ? 'private, max-age=600, stale-while-revalidate=1200'
+          : 'private, max-age=30, stale-while-revalidate=60'
+      );
+      return res;
     } catch (error) {
       console.error(`🔍 CHECK-STATUS - Error checking if video ${videoId} is processed:`, error);
       return NextResponse.json(

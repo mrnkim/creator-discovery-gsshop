@@ -93,7 +93,9 @@ export async function GET(request: NextRequest) {
       }
     };
 
-    return NextResponse.json(formattedData);
+    const res = NextResponse.json(formattedData);
+    res.headers.set('Cache-Control', 'private, max-age=300, stale-while-revalidate=600');
+    return res;
   } catch (error) {
     console.error('Error in videos API:', error);
     return NextResponse.json(

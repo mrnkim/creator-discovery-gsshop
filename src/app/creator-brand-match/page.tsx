@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import axios from "axios";
 import {
   fetchVideos,
@@ -28,6 +28,8 @@ const VideoWithTags: React.FC<{
     queryKey: ["videoDetails", videoId],
     queryFn: () => fetchVideoDetails(videoId, indexId),
     enabled: !!videoId && !!indexId,
+    staleTime: 10 * 60 * 1000, // 10 minutes
+    gcTime: 60 * 60 * 1000, // 1 hour
   });
 
   // Render tags from user_metadata (same as SimilarVideoResults)
@@ -274,7 +276,10 @@ const INDEX_CONFIGS: IndexConfig[] = [
   { key: "creator", label: "Creator", shortLabel: "Creator", envVar: "NEXT_PUBLIC_CREATOR_INDEX_ID" },
 ];
 
+const SEARCH_CACHE_TTL = 10 * 60 * 1000; // 10 minutes
+
 export default function CreatorBrandMatch() {
+  const queryClient = useQueryClient();
   const description: string | undefined = undefined;
   const [selectedSources, setSelectedSources] = useState<IndexKey[]>(["brand"]);
   const [selectedTargets, setSelectedTargets] = useState<IndexKey[]>(["brand-ppl", "creator"]);
@@ -302,12 +307,10 @@ export default function CreatorBrandMatch() {
   const [sourceSegment, setSourceSegment] = useState<{ startTime: number; endTime: number } | null>(null);
 
   const handleSourceSegmentClick = useCallback((startTime: number, endTime: number) => {
-    console.log(`[SourceSync] handleSourceSegmentClick — startTime=${startTime}, endTime=${endTime}`);
     setSourceSegment({ startTime, endTime });
   }, []);
 
   const handleSourceSegmentClear = useCallback(() => {
-    console.log(`[SourceSync] handleSourceSegmentClear`);
     setSourceSegment(null);
   }, []);
 
@@ -363,8 +366,8 @@ export default function CreatorBrandMatch() {
     queryKey: ["allVideos", brandIndexId],
     queryFn: () => fetchVideos(1, brandIndexId, 20),
     enabled: !!brandIndexId,
-    staleTime: 5 * 60 * 1000,
-    gcTime: 15 * 60 * 1000,
+    staleTime: 10 * 60 * 1000, // 10 minutes
+    gcTime: 30 * 60 * 1000, // 30 minutes
     refetchOnWindowFocus: false,
   });
 
@@ -372,8 +375,8 @@ export default function CreatorBrandMatch() {
     queryKey: ["allVideos", brandPplIndexId],
     queryFn: () => fetchVideos(1, brandPplIndexId, 20),
     enabled: !!brandPplIndexId,
-    staleTime: 5 * 60 * 1000,
-    gcTime: 15 * 60 * 1000,
+    staleTime: 10 * 60 * 1000, // 10 minutes
+    gcTime: 30 * 60 * 1000, // 30 minutes
     refetchOnWindowFocus: false,
   });
 
@@ -381,8 +384,8 @@ export default function CreatorBrandMatch() {
     queryKey: ["allVideos", creatorIndexId],
     queryFn: () => fetchVideos(1, creatorIndexId, 20),
     enabled: !!creatorIndexId,
-    staleTime: 5 * 60 * 1000,
-    gcTime: 15 * 60 * 1000,
+    staleTime: 10 * 60 * 1000, // 10 minutes
+    gcTime: 30 * 60 * 1000, // 30 minutes
     refetchOnWindowFocus: false,
   });
 
@@ -399,6 +402,15 @@ export default function CreatorBrandMatch() {
   );
 
   const mergedSourceVideos: VideoData[] = selectedSources.flatMap((k) => allVideosMap[k]);
+
+  // Build videoId -> label map for dropdown badges (only used when multi-source)
+  const videoIdLabelMap: Record<string, string> = {};
+  for (const key of selectedSources) {
+    const label = INDEX_CONFIGS.find((c) => c.key === key)?.shortLabel || key;
+    for (const v of allVideosMap[key]) {
+      videoIdLabelMap[v._id] = label;
+    }
+  }
 
   const videosData = {
     pages: [{ data: mergedSourceVideos, page_info: { limit_per_page: 20, page: 1, total_duration: 0, total_page: 1, total_results: mergedSourceVideos.length } }],
@@ -500,6 +512,22 @@ export default function CreatorBrandMatch() {
   const handleFindMatches = async () => {
     if (!selectedVideoId || selectedTargets.length === 0) return;
 
+    // Check search results cache first
+    const sortedTargets = [...selectedTargets].sort().join(",");
+    const cacheKey = ["searchResults", selectedVideoId, sortedTargets];
+    const cached = queryClient.getQueryData<{
+      results: EmbeddingSearchResult[];
+      searchTerm: string;
+      cachedAt: number;
+    }>(cacheKey);
+
+    if (cached && Date.now() - cached.cachedAt < SEARCH_CACHE_TTL) {
+      setSimilarResults(cached.results);
+      setTextSearchTerm(cached.searchTerm);
+      setEmbeddingsReady(true);
+      return;
+    }
+
     setIsAnalyzing(true);
     setSimilarResults([]);
 
@@ -565,6 +593,13 @@ export default function CreatorBrandMatch() {
       // Combine results with a boost for videos that appear in both searches
       const combinedResults = combineSearchResults(allTextResults, allVideoResults);
       setSimilarResults(combinedResults);
+
+      // Cache search results for reuse
+      queryClient.setQueryData(cacheKey, {
+        results: combinedResults,
+        searchTerm: lastSearchTerm,
+        cachedAt: Date.now(),
+      });
     } catch (error) {
       console.error("❌ Error finding matches:", error);
     } finally {
@@ -667,7 +702,8 @@ export default function CreatorBrandMatch() {
   // Auto-select first video when videos are loaded
   useEffect(() => {
     if (mergedSourceVideos.length > 0 && !selectedVideoId) {
-      handleVideoChange(mergedSourceVideos[0]._id);
+      const firstId = mergedSourceVideos[0]._id;
+      handleVideoChange(firstId);
     }
   }, [mergedSourceVideos.length, selectedVideoId]);
 
@@ -679,7 +715,7 @@ export default function CreatorBrandMatch() {
   const leftPanelBaseClass =
     "flex flex-col gap-20 justify-center items-center transform-gpu h-full";
   const leftPanelTransitionClass = isReadyForAnimation
-    ? "transition-all duration-500 ease-out"
+    ? "transition-[width,transform] duration-500 ease-out"
     : "";
   const leftPanelStateClass = showResults
     ? "w-3/5 -translate-x-2 md:-translate-x-1"
@@ -695,7 +731,7 @@ export default function CreatorBrandMatch() {
   const rightPanelBaseClass =
     "flex flex-col justify-start overflow-hidden min-w-0 transform-gpu h-full max-w-[436px]";
   const rightPanelTransitionClass = isReadyForAnimation
-    ? "transition-all duration-500 ease-out"
+    ? "transition-[width,opacity,transform] duration-500 ease-out"
     : "";
   const rightPanelStateClass = showResults
     ? "w-2/5 opacity-100 scale-100 pointer-events-auto"
@@ -814,6 +850,7 @@ export default function CreatorBrandMatch() {
                 selectedFile={null}
                 taskId={null}
                 footageVideoId={selectedVideoId}
+                indexLabelMap={selectedSources.length > 1 ? videoIdLabelMap : undefined}
               />
             </div>
 
@@ -831,7 +868,7 @@ export default function CreatorBrandMatch() {
                     endTime={sourceSegment?.endTime}
                     showBrandTag={selectedVideoIndexId ? indexKeyMap[selectedVideoIndexId] !== "creator" : !selectedSources.includes("creator")}
                     showCreatorTag={selectedVideoIndexId ? indexKeyMap[selectedVideoIndexId] === "creator" : selectedSources.includes("creator")}
-                    onReadyChange={(ready) => console.log(`[SOURCE PLAYER] isVideoReady=${ready}, videoId=${selectedVideoId}`)}
+                    onReadyChange={() => {}}
                   />
                 </div>
                 {/* Video Tags - using Video component's data */}

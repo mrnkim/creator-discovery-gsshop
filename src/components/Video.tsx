@@ -182,6 +182,8 @@ const Video: React.FC<EnhancedVideoProps> = ({
       return fetchVideoDetails(videoId!, indexId);
     },
     enabled: !!indexId && !!videoId && !providedVideoDetails,
+    staleTime: 10 * 60 * 1000, // 10 minutes
+    gcTime: 60 * 60 * 1000, // 1 hour
   });
 
   const finalVideoDetails = providedVideoDetails || videoDetails;
