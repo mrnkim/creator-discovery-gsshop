@@ -27,6 +27,8 @@ interface VideoPlayerProps extends VideoProps {
   confidenceColor?: "green" | "yellow" | "red";
   showCreatorTag?: boolean;
   showBrandTag?: boolean;
+  creatorNameOverride?: string | null;
+  brandNameOverride?: string | null;
   videoUrl?: string;
   startTime?: number;
   endTime?: number;
@@ -44,6 +46,9 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
   confidenceLabel,
   showBrandTag,
   showCreatorTag,
+  creatorNameOverride,
+  brandNameOverride,
+  onReadyChange,
   videoUrl,
   startTime,
   endTime,
@@ -206,6 +211,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     const videoElement = playerRef.current;
     console.log(`[VideoPlayer ${videoId}] handleReady fired — playerRef=${!!videoElement}`);
     setIsVideoReady(true);
+    onReadyChange?.(true);
 
     if (videoElement && startTime != null) {
       try {
@@ -327,12 +333,15 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const getCreatorName = (
     videoData: VideoDetails | undefined
   ): string | null => {
+    console.log(`[VideoPlayer ${videoId}] getCreatorName called — showCreatorTag=${showCreatorTag}, hasData=${!!videoData}, user_metadata=`, videoData?.user_metadata);
     if (!videoData || !videoData.user_metadata) return null;
 
     const creator =
       videoData.user_metadata.creator ||
       videoData.user_metadata.video_creator ||
       videoData.user_metadata.creator_id;
+
+    console.log(`[VideoPlayer ${videoId}] creator field value="${creator}"`);
 
     if (creator && typeof creator === "string" && creator.trim().length > 0) {
       return creator.trim();
@@ -500,18 +509,18 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
         </div>
       </div>
       {/* CREATOR NAME TAG */}
-      {showCreatorTag && getCreatorName(videoDetails) && (
+      {showCreatorTag && (creatorNameOverride || getCreatorName(videoDetails)) && (
         <div className="absolute top-4 left-6 z-10 h-[20px]">
           <span className="px-1 py-0.5 outline outline-white outline-1 uppercase text-xs text-white rounded-md font-['Milling'] font-normal border-1 border-white backdrop-blur-[20px]">
-            {getCreatorName(videoDetails)}
+            {creatorNameOverride || getCreatorName(videoDetails)}
           </span>
         </div>
       )}
       {/* BRAND NAME TAG */}
-      {showBrandTag && getBrandName(videoDetails) && (
+      {showBrandTag && (brandNameOverride || getBrandName(videoDetails)) && (
         <div className="absolute top-4 left-6 z-10 h-[20px]">
           <span className="px-1 py-0.5 outline outline-white outline-1 uppercase text-xs text-white rounded-md font-['Milling'] font-normal border-1 border-white backdrop-blur-[20px]">
-            {getBrandName(videoDetails)}
+            {brandNameOverride || getBrandName(videoDetails)}
           </span>
         </div>
       )}

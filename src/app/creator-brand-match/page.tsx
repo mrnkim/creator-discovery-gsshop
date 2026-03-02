@@ -724,70 +724,79 @@ export default function CreatorBrandMatch() {
         <div className={leftPanelClasses}>
           {/* Source / Target Selection */}
           <div className="flex flex-col items-center gap-3">
-            {/* Source Index Checkboxes */}
-            <div className="flex items-center gap-4">
-              <span className="text-xs text-gray-500 font-medium">Source:</span>
-              {INDEX_CONFIGS.map((config) => (
-                <label key={config.key} className="flex items-center gap-1.5 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={selectedSources.includes(config.key)}
-                    onChange={(e) => {
-                      let newSources: IndexKey[];
-                      if (e.target.checked) {
-                        newSources = [...selectedSources, config.key];
-                      } else {
-                        if (selectedSources.length <= 1) return; // Keep at least 1
-                        newSources = selectedSources.filter((k) => k !== config.key);
-                      }
-                      setSelectedSources(newSources);
-                      // Auto-update targets: everything not in sources
-                      const newTargets = INDEX_CONFIGS
-                        .filter((c) => !newSources.includes(c.key))
-                        .map((c) => c.key);
-                      setSelectedTargets(newTargets);
-                      setSelectedVideoId(null);
-                      setSelectedVideoIndexId(null);
-                      setSimilarResults([]);
-                      setEmbeddingsReady(false);
-                    }}
-                    className="w-3.5 h-3.5 rounded border-gray-300 text-[#1D1C1B] focus:ring-gray-500"
-                  />
-                  <span className={`text-sm ${selectedSources.includes(config.key) ? "text-gray-900 font-medium" : "text-gray-500"}`}>
-                    {config.label}
-                  </span>
-                </label>
-              ))}
+            {/* Source Index Toggle */}
+            <div className="flex items-center gap-3">
+              <span className="text-sm text-black font-medium font-['Milling']">Source</span>
+              <div className="inline-flex gap-1 rounded-full border border-gray-300 bg-white p-1">
+                {INDEX_CONFIGS.filter((c) => c.key !== "creator").map((config) => {
+                  const isSelected = selectedSources.includes(config.key);
+                  return (
+                    <button
+                      key={config.key}
+                      onClick={() => {
+                        let newSources: IndexKey[];
+                        if (isSelected) {
+                          if (selectedSources.length <= 1) return;
+                          newSources = selectedSources.filter((k) => k !== config.key);
+                        } else {
+                          newSources = [...selectedSources, config.key];
+                        }
+                        setSelectedSources(newSources);
+                        const newTargets = INDEX_CONFIGS
+                          .filter((c) => !newSources.includes(c.key))
+                          .map((c) => c.key);
+                        setSelectedTargets(newTargets);
+                        setSelectedVideoId(null);
+                        setSelectedVideoIndexId(null);
+                        setSimilarResults([]);
+                        setEmbeddingsReady(false);
+                      }}
+                      className={`px-4 py-1.5 rounded-full text-sm font-['Milling'] transition-colors ${
+                        isSelected
+                          ? "bg-[#1D1C1B] text-white"
+                          : "text-gray-500 hover:text-gray-700"
+                      }`}
+                    >
+                      {config.label}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
-            {/* Target Index Checkboxes */}
-            <div className="flex items-center gap-4">
-              <span className="text-xs text-gray-500 font-medium">Target:</span>
-              {targetOptions.length > 0 ? (
-                targetOptions.map((config) => (
-                  <label key={config.key} className="flex items-center gap-1.5 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={selectedTargets.includes(config.key)}
-                      onChange={(e) => {
-                        if (e.target.checked) {
-                          setSelectedTargets((prev) => [...prev, config.key]);
-                        } else {
-                          if (selectedTargets.length > 1) {
-                            setSelectedTargets((prev) => prev.filter((k) => k !== config.key));
+            {/* Target Index Toggle */}
+            <div className="flex items-center gap-3">
+              <span className="text-sm text-black font-medium font-['Milling']">Target</span>
+              <div className="inline-flex gap-1 rounded-full border border-gray-300 bg-white p-1">
+                {targetOptions.length > 0 ? (
+                  targetOptions.map((config) => {
+                    const isSelected = selectedTargets.includes(config.key);
+                    return (
+                      <button
+                        key={config.key}
+                        onClick={() => {
+                          if (isSelected) {
+                            if (selectedTargets.length > 1) {
+                              setSelectedTargets((prev) => prev.filter((k) => k !== config.key));
+                            }
+                          } else {
+                            setSelectedTargets((prev) => [...prev, config.key]);
                           }
-                        }
-                      }}
-                      className="w-3.5 h-3.5 rounded border-gray-300 text-[#1D1C1B] focus:ring-gray-500"
-                    />
-                    <span className={`text-sm ${selectedTargets.includes(config.key) ? "text-gray-900 font-medium" : "text-gray-500"}`}>
-                      {config.label}
-                    </span>
-                  </label>
-                ))
-              ) : (
-                <span className="text-xs text-gray-400 italic">No targets available</span>
-              )}
+                        }}
+                        className={`px-4 py-1.5 rounded-full text-sm font-['Milling'] transition-colors ${
+                          isSelected
+                            ? "bg-[#1D1C1B] text-white"
+                            : "text-gray-500 hover:text-gray-700"
+                        }`}
+                      >
+                        {config.label}
+                      </button>
+                    );
+                  })
+                ) : (
+                  <span className="text-sm text-gray-400 font-['Milling'] italic px-3">No targets available</span>
+                )}
+              </div>
             </div>
           </div>
 
@@ -813,6 +822,7 @@ export default function CreatorBrandMatch() {
               <div className="flex flex-col items-center flex-shrink-0 min-h-[370px]">
                 <div className="relative h-[168px] md:h-[344px] ">
                   <VideoPlayer
+                    key={selectedVideoId}
                     videoId={selectedVideoId}
                     indexId={sourceIndexId}
                     className="w-full h-full max-w-[300px] max-h-[168px] lg:max-w-[612px] lg:max-h-[344px] rounded-[32px]"
@@ -821,6 +831,7 @@ export default function CreatorBrandMatch() {
                     endTime={sourceSegment?.endTime}
                     showBrandTag={selectedVideoIndexId ? indexKeyMap[selectedVideoIndexId] !== "creator" : !selectedSources.includes("creator")}
                     showCreatorTag={selectedVideoIndexId ? indexKeyMap[selectedVideoIndexId] === "creator" : selectedSources.includes("creator")}
+                    onReadyChange={(ready) => console.log(`[SOURCE PLAYER] isVideoReady=${ready}, videoId=${selectedVideoId}`)}
                   />
                 </div>
                 {/* Video Tags - using Video component's data */}

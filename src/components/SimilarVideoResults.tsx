@@ -425,6 +425,33 @@ const SimilarVideoResults: React.FC<
           const videoData = videoDetails[videoId];
 
           const firstSegment = result.segmentMatches?.[0];
+          const isPplResult = !!(indexNameMap && result.metadata?.tl_index_id && indexNameMap[result.metadata.tl_index_id] === "PPL");
+
+          // Extract creator name from videoData or system_metadata filename
+          const extractCreatorName = (): string | null => {
+            if (videoData?.user_metadata) {
+              const c = videoData.user_metadata.creator || videoData.user_metadata.video_creator || videoData.user_metadata.creator_id;
+              if (c && typeof c === "string" && c.trim().length > 0) return c.trim();
+            }
+            // Fallback: extract from system_metadata filename (e.g. "크리에이터명_영상제목.mp4")
+            const filename = videoData?.system_metadata?.filename;
+            if (filename) {
+              // Try to extract creator from filename pattern: "creator_title" or "creator - title"
+              const match = filename.match(/^([^_\-]+)[_\-]/);
+              if (match && match[1].trim().length > 0 && match[1].trim().length < 30) {
+                return match[1].trim();
+              }
+            }
+            return null;
+          };
+
+          console.log(`[SimilarVideoResults] videoId=${videoId}, isPplResult=${isPplResult}, sourceType=${sourceType}, creatorName="${extractCreatorName()}"`, {
+            tl_index_id: result.metadata?.tl_index_id,
+            mapped: result.metadata?.tl_index_id && indexNameMap?.[result.metadata.tl_index_id],
+            videoData_user_metadata: videoData?.user_metadata,
+            videoData_system_metadata: videoData?.system_metadata,
+            pinecone_metadata: result.metadata,
+          });
 
           return (
             <div
@@ -469,8 +496,9 @@ const SimilarVideoResults: React.FC<
                 confidenceLabel={label}
                 confidenceColor={color as "green" | "yellow" | "red"}
                 initialMuted
-                showCreatorTag={sourceType === "brand" || sourceType === "brand-ppl"}
-                showBrandTag={sourceType === "creator"}
+                showCreatorTag={sourceType === "brand" || sourceType === "brand-ppl" || isPplResult}
+                showBrandTag={sourceType === "creator" && !isPplResult}
+                creatorNameOverride={extractCreatorName()}
                 onPlayerReady={(controls) => {
                   if (videoId) {
                     playerControlsRef.current[videoId] = controls;

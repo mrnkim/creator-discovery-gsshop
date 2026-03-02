@@ -110,26 +110,29 @@ export default function AdminPage() {
     }
   };
 
-  const triggerBulkAnalyze = async () => {
-    if (!creatorIndexId) {
-      setMessage('Creator index ID is not configured.');
+  const triggerBulkAnalyze = async (targetIndexId?: string, label?: string) => {
+    const indexId = targetIndexId || creatorIndexId;
+    const indexLabel = label || 'Creator';
+
+    if (!indexId) {
+      setMessage(`${indexLabel} index ID is not configured.`);
       return;
     }
 
-    const creatorVideos = videos.filter(v => v.index_id === creatorIndexId);
-    if (creatorVideos.length === 0) {
-      setMessage('No creator videos found to analyze.');
+    const targetVideos = videos.filter(v => v.index_id === indexId);
+    if (targetVideos.length === 0) {
+      setMessage(`No ${indexLabel} videos found to analyze.`);
       return;
     }
 
     setIsBulkAnalyzing(true);
-    setBulkProgress({ current: 0, total: creatorVideos.length });
+    setBulkProgress({ current: 0, total: targetVideos.length });
     setMessage(null);
 
     try {
-      for (let i = 0; i < creatorVideos.length; i++) {
-        const video = creatorVideos[i];
-        setBulkProgress({ current: i + 1, total: creatorVideos.length });
+      for (let i = 0; i < targetVideos.length; i++) {
+        const video = targetVideos[i];
+        setBulkProgress({ current: i + 1, total: targetVideos.length });
 
         try {
           await axios.post('/api/brand-mentions/analyze', {
@@ -147,7 +150,7 @@ export default function AdminPage() {
         await new Promise(resolve => setTimeout(resolve, 1000));
       }
 
-      setMessage(`Bulk analysis completed! Processed ${creatorVideos.length} creator videos.`);
+      setMessage(`Bulk analysis completed! Processed ${targetVideos.length} ${indexLabel} videos.`);
     } catch (err: unknown) {
       setMessage(err instanceof Error ? err.message : 'Failed to complete bulk analysis');
     } finally {
@@ -278,7 +281,7 @@ export default function AdminPage() {
               )}
             </div>
             <button
-              onClick={triggerBulkAnalyze}
+              onClick={() => triggerBulkAnalyze(creatorIndexId, 'Creator')}
               disabled={isBulkAnalyzing || !creatorIndexId}
               className={clsx(
                 'px-4 py-2 rounded font-medium',
@@ -288,6 +291,18 @@ export default function AdminPage() {
               )}
             >
               {isBulkAnalyzing ? 'Analyzing...' : 'Re-analyze All Creators'}
+            </button>
+            <button
+              onClick={() => triggerBulkAnalyze(brandPplIndexId, 'PPL')}
+              disabled={isBulkAnalyzing || !brandPplIndexId}
+              className={clsx(
+                'px-4 py-2 rounded font-medium',
+                isBulkAnalyzing || !brandPplIndexId
+                  ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                  : 'bg-orange-500 text-white hover:bg-orange-600'
+              )}
+            >
+              {isBulkAnalyzing ? 'Analyzing...' : 'Re-analyze All PPL'}
             </button>
           </div>
         </div>
